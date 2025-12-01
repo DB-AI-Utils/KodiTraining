@@ -56,7 +56,7 @@ export async function setOrder(orderA, orderB) {
     headers: {
       'Content-Type': 'application/json',
     },
-    body: JSON.stringify({ orderA, orderB }),
+    body: JSON.stringify({ a: orderA, b: orderB }),
   });
 
   if (!response.ok) {

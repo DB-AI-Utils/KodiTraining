@@ -1,12 +1,24 @@
 import express from 'express';
 import { v4 as uuidv4 } from 'uuid';
-import { promises as fs } from 'fs';
+import { promises as fs, readdirSync } from 'fs';
 import { join, dirname } from 'path';
 import { fileURLToPath } from 'url';
 import { combinePair, concatenateVideos, compressVideo } from '../services/ffmpeg.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const router = express.Router();
+
+/**
+ * Find the actual file path by ID (files are stored as id.ext)
+ */
+function findFileById(dir, id) {
+  const files = readdirSync(dir);
+  const file = files.find(f => f.startsWith(id));
+  if (!file) {
+    throw new Error(`File not found for ID: ${id}`);
+  }
+  return join(dir, file);
+}
 
 // In-memory storage for video ordering and job status
 let videoOrder = { a: [], b: [] };
@@ -164,9 +176,12 @@ async function processVideos(jobId, order, config) {
 
   try {
     // Step 1: Process each pair (combine side-by-side)
+    const uploadsADir = join(__dirname, '../../uploads/a');
+    const uploadsBDir = join(__dirname, '../../uploads/b');
+
     for (let i = 0; i < numPairs; i++) {
-      const videoAPath = join(__dirname, '../../uploads/a', a[i]);
-      const videoBPath = join(__dirname, '../../uploads/b', b[i]);
+      const videoAPath = findFileById(uploadsADir, a[i]);
+      const videoBPath = findFileById(uploadsBDir, b[i]);
       const pairOutputPath = join(pairsDir, `pair_${i + 1}.mp4`);
 
       console.log(`Processing pair ${i + 1}/${numPairs}...`);

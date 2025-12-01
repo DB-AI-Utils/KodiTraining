@@ -24,7 +24,18 @@ async function clearDirectory(dirPath) {
   try {
     const files = await fs.readdir(dirPath);
     await Promise.all(
-      files.map(file => fs.unlink(path.join(dirPath, file)))
+      files.map(async (file) => {
+        const filePath = path.join(dirPath, file);
+        const stat = await fs.stat(filePath);
+
+        if (stat.isDirectory()) {
+          // Recursively remove directory
+          await fs.rm(filePath, { recursive: true, force: true });
+        } else {
+          // Remove file
+          await fs.unlink(filePath);
+        }
+      })
     );
   } catch (error) {
     // If directory doesn't exist, create it
