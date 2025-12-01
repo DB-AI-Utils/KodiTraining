@@ -1,0 +1,10 @@
+{
+  "compression": {
+    "presets": {
+      "low": { "crf": 32, "preset": "fast", "maxWidth": 960, "audioBitrate": "64k" },
+      "medium": { "crf": 28, "preset": "slow", "maxWidth": 1280, "audioBitrate": "96k" },
+      "high": { "crf": 23, "preset": "slow", "maxWidth": 1920, "audioBitrate": "128k" }
+    },
+    "default": "medium"
+  }
+}
