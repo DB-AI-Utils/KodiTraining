@@ -2,6 +2,7 @@ import express from 'express';
 import cors from 'cors';
 import uploadRoutes from './routes/upload.js';
 import resetRoutes from './routes/reset.js';
+import processRoutes from './routes/process.js';
 
 const app = express();
 const PORT = 3001;
@@ -15,6 +16,7 @@ app.get('/health', (req, res) => {
 
 app.use('/upload', uploadRoutes);
 app.use('/reset', resetRoutes);
+app.use('/api', processRoutes);
 
 app.listen(PORT, () => {
   console.log(`Server running on http://localhost:${PORT}`);
