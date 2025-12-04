@@ -1,7 +1,11 @@
 import ffmpeg from 'fluent-ffmpeg';
+import ffprobeStatic from 'ffprobe-static';
 import { promises as fs } from 'fs';
 import { join } from 'path';
 import { tmpdir } from 'os';
+
+// Set ffprobe path for fluent-ffmpeg
+ffmpeg.setFfprobePath(ffprobeStatic.path);
 
 /**
  * Combine two videos side-by-side using hstack filter
@@ -59,15 +63,46 @@ export function combinePair(videoA, videoB, outputPath, onProgress) {
 }
 
 /**
+ * Parse timemark string (HH:MM:SS.ms) to seconds
+ */
+function parseTimemark(timemark) {
+  if (!timemark) return 0;
+  const parts = timemark.split(':');
+  if (parts.length !== 3) return 0;
+  const hours = parseFloat(parts[0]) || 0;
+  const minutes = parseFloat(parts[1]) || 0;
+  const seconds = parseFloat(parts[2]) || 0;
+  return hours * 3600 + minutes * 60 + seconds;
+}
+
+/**
  * Concatenate multiple videos using concat demuxer
  * @param {string[]} inputPaths - Array of video paths to concatenate
  * @param {string} outputPath - Path for output video
  * @param {Function} onProgress - Progress callback (percent: 0-100)
+ * @param {Object} options - Concatenation options
+ * @param {boolean} options.reencode - Re-encode videos (needed for VFR cameras), default false
  * @returns {Promise<void>}
  */
-export async function concatenateVideos(inputPaths, outputPath, onProgress) {
+export async function concatenateVideos(inputPaths, outputPath, onProgress, options = {}) {
+  const { reencode = false } = options;
+
   if (!inputPaths || inputPaths.length === 0) {
     throw new Error('No input videos provided for concatenation');
+  }
+
+  // Calculate total duration for accurate progress when re-encoding
+  let totalDuration = 0;
+  if (reencode && onProgress) {
+    for (const inputPath of inputPaths) {
+      try {
+        const duration = await getVideoDuration(inputPath);
+        totalDuration += duration;
+      } catch (err) {
+        // If we can't get duration, progress will be less accurate
+        console.warn(`Could not get duration for ${inputPath}: ${err.message}`);
+      }
+    }
   }
 
   // Create temporary file list for concat demuxer
@@ -89,16 +124,41 @@ export async function concatenateVideos(inputPaths, outputPath, onProgress) {
         .inputOptions([
           '-f', 'concat',
           '-safe', '0'
-        ])
-        .outputOptions([
-          '-c', 'copy'
-        ])
-        .output(outputPath);
+        ]);
+
+      if (reencode) {
+        // Re-encode with fps normalization for VFR camera files
+        command
+          .videoFilter('fps=30')
+          .videoCodec('libx264')
+          .outputOptions([
+            '-preset', 'veryfast',
+            '-crf', '18'
+          ])
+          .audioCodec('aac')
+          .audioBitrate('192k');
+      } else {
+        // Stream copy for already-processed files
+        command.outputOptions(['-c', 'copy']);
+      }
+
+      command.output(outputPath);
 
       // Handle progress updates
       command.on('progress', (progress) => {
-        if (onProgress && progress.percent) {
-          onProgress(Math.round(progress.percent));
+        if (onProgress) {
+          let percent;
+          if (totalDuration > 0 && progress.timemark) {
+            // Calculate accurate progress based on timemark
+            const currentTime = parseTimemark(progress.timemark);
+            percent = Math.min(99, Math.round((currentTime / totalDuration) * 100));
+          } else if (progress.percent) {
+            // Fallback to FFmpeg's percent, but cap at 100
+            percent = Math.min(100, Math.round(progress.percent));
+          }
+          if (percent !== undefined) {
+            onProgress(percent);
+          }
         }
       });
 
@@ -199,6 +259,80 @@ export function compressVideo(inputPath, outputPath, config = {}, onProgress) {
     // Handle errors
     command.on('error', (err) => {
       reject(new Error(`Failed to compress video: ${err.message}`));
+    });
+
+    // Start processing
+    command.run();
+  });
+}
+
+/**
+ * Get the duration of a video file in seconds
+ * @param {string} videoPath - Path to the video file
+ * @returns {Promise<number>} Duration in seconds
+ */
+export function getVideoDuration(videoPath) {
+  return new Promise((resolve, reject) => {
+    ffmpeg.ffprobe(videoPath, (err, metadata) => {
+      if (err) {
+        reject(new Error(`Failed to get video duration: ${err.message}`));
+        return;
+      }
+
+      const duration = metadata.format.duration;
+      if (duration === undefined || duration === null) {
+        reject(new Error('Could not determine video duration'));
+        return;
+      }
+
+      resolve(parseFloat(duration));
+    });
+  });
+}
+
+/**
+ * Pad a video with cloned frames and silent audio
+ * @param {string} inputPath - Path to input video
+ * @param {string} outputPath - Path for output video
+ * @param {number} paddingDuration - Seconds of padding to add at the end
+ * @param {Function} onProgress - Progress callback (percent: 0-100)
+ * @returns {Promise<void>}
+ */
+export function padVideo(inputPath, outputPath, paddingDuration, onProgress) {
+  return new Promise((resolve, reject) => {
+    const command = ffmpeg();
+
+    command.input(inputPath);
+
+    // Use tpad filter to clone last frame at the end
+    // apad pads audio with silence
+    // Note: tpad stop_duration adds that many seconds AFTER the video ends
+    command
+      .complexFilter([
+        `[0:v]tpad=stop_mode=clone:stop_duration=${paddingDuration}[v]`,
+        `[0:a]apad=pad_dur=${paddingDuration}[a]`
+      ])
+      .outputOptions([
+        '-map', '[v]',
+        '-map', '[a]'
+      ])
+      .output(outputPath);
+
+    // Handle progress updates
+    command.on('progress', (progress) => {
+      if (onProgress && progress.percent) {
+        onProgress(Math.round(progress.percent));
+      }
+    });
+
+    // Handle completion
+    command.on('end', () => {
+      resolve();
+    });
+
+    // Handle errors
+    command.on('error', (err) => {
+      reject(new Error(`Failed to pad video: ${err.message}`));
     });
 
     // Start processing

@@ -11,9 +11,10 @@ function App() {
   const [filesB, setFilesB] = useState([])
   const [config, setConfig] = useState({
     crf: 28,
-    preset: 'slow',
+    preset: 'superfast',
     maxWidth: null,
-    audioBitrate: '96k'
+    audioBitrate: '96k',
+    concatenateFirst: true
   })
 
   // Processing state
@@ -169,7 +170,12 @@ function App() {
         <button
           className="process-button"
           onClick={handleProcess}
-          disabled={!(filesA.length > 0 && filesA.length === filesB.length && !isProcessing)}
+          disabled={
+            isProcessing ||
+            filesA.length === 0 ||
+            filesB.length === 0 ||
+            (!config.concatenateFirst && filesA.length !== filesB.length)
+          }
         >
           {isProcessing ? 'Processing...' : 'Process Videos'}
         </button>

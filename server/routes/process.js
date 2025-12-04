@@ -3,10 +3,18 @@ import { v4 as uuidv4 } from 'uuid';
 import { promises as fs, readdirSync } from 'fs';
 import { join, dirname } from 'path';
 import { fileURLToPath } from 'url';
-import { combinePair, concatenateVideos, compressVideo } from '../services/ffmpeg.js';
+import { combinePair, concatenateVideos, compressVideo, getVideoDuration, padVideo } from '../services/ffmpeg.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const router = express.Router();
+
+/**
+ * Logger with timestamp
+ */
+function log(message) {
+  const timestamp = new Date().toISOString().replace('T', ' ').substring(0, 19);
+  console.log(`[${timestamp}] ${message}`);
+}
 
 /**
  * Find the actual file path by ID (files are stored as id.ext)
@@ -39,11 +47,7 @@ router.post('/order', (req, res) => {
       });
     }
 
-    if (a.length !== b.length) {
-      return res.status(400).json({
-        error: 'Arrays a and b must have the same length'
-      });
-    }
+    // Note: We no longer validate equal length here - it's done in /process based on mode
 
     // Store the order
     videoOrder = { a, b };
@@ -61,16 +65,24 @@ router.post('/order', (req, res) => {
 
 /**
  * POST /process - Start FFmpeg processing pipeline
- * Body: { config: { crf, preset, maxWidth, audioBitrate } }
+ * Body: { config: { crf, preset, maxWidth, audioBitrate, concatenateFirst } }
  */
 router.post('/process', async (req, res) => {
   try {
     const { config = {} } = req.body;
+    const { concatenateFirst = false } = config;
 
     // Validate that we have an order set
     if (videoOrder.a.length === 0 || videoOrder.b.length === 0) {
       return res.status(400).json({
         error: 'No video order set. Call POST /order first'
+      });
+    }
+
+    // Validate equal length for pair-by-pair mode only
+    if (!concatenateFirst && videoOrder.a.length !== videoOrder.b.length) {
+      return res.status(400).json({
+        error: 'Arrays a and b must have the same length for pair-by-pair mode'
       });
     }
 
@@ -86,8 +98,9 @@ router.post('/process', async (req, res) => {
     // Return job ID immediately
     res.json({ jobId });
 
-    // Start async processing (don't await)
-    processVideos(jobId, videoOrder, config).catch(error => {
+    // Start async processing based on mode (don't await)
+    const processFn = concatenateFirst ? processVideosConcatenateFirst : processVideos;
+    processFn(jobId, videoOrder, config).catch(error => {
       console.error(`Job ${jobId} failed:`, error);
       jobs.set(jobId, {
         progress: 0,
@@ -261,6 +274,179 @@ async function processVideos(jobId, order, config) {
 
   } catch (error) {
     console.error(`Error processing job ${jobId}:`, error);
+    jobs.set(jobId, {
+      progress: Math.round((completedSteps / totalSteps) * 100),
+      status: 'error',
+      error: error.message
+    });
+    throw error;
+  }
+}
+
+/**
+ * Concatenate-first processing pipeline
+ * 1. Concatenate all Camera A videos
+ * 2. Concatenate all Camera B videos
+ * 3. Pad shorter video if durations differ
+ * 4. Combine side-by-side
+ * 5. Compress
+ *
+ * @param {string} jobId - Job identifier
+ * @param {Object} order - Video ordering { a: [], b: [] }
+ * @param {Object} config - Compression configuration
+ */
+async function processVideosConcatenateFirst(jobId, order, config) {
+  const { a, b } = order;
+
+  log(`=== Starting job ${jobId} (Concatenate-First Mode) ===`);
+  log(`Camera A: ${a.length} videos, Camera B: ${b.length} videos`);
+  log(`Config: CRF=${config.crf || 28}, preset=${config.preset || 'slow'}, maxWidth=${config.maxWidth || 'original'}`);
+
+  // Total steps: concat_a + concat_b + (optional pad) + combine + compress
+  // We'll count pad as part of the combine step for simplicity
+  const totalSteps = 4;
+  let completedSteps = 0;
+
+  // Ensure output directory exists
+  const outputDir = join(__dirname, '../../output');
+  try {
+    await fs.mkdir(outputDir, { recursive: true });
+  } catch (error) {
+    // Directory might already exist, ignore
+  }
+
+  const uploadsADir = join(__dirname, '../../uploads/a');
+  const uploadsBDir = join(__dirname, '../../uploads/b');
+
+  try {
+    // Step 1: Concatenate all Camera A videos (with re-encoding for VFR normalization)
+    const videoAPaths = a.map(id => findFileById(uploadsADir, id));
+    log(`[Step 1/4] Concatenating ${videoAPaths.length} Camera A videos (with VFR re-encoding)...`);
+    const concatAPath = join(outputDir, 'concat_a.mp4');
+
+    let lastLoggedPercentA = 0;
+    await concatenateVideos(videoAPaths, concatAPath, (percent) => {
+      if (percent >= lastLoggedPercentA + 10) {
+        log(`  Camera A concatenation: ${percent}%`);
+        lastLoggedPercentA = percent;
+      }
+      const stepProgress = percent / 100;
+      const overallProgress = ((completedSteps + stepProgress) / totalSteps) * 100;
+      jobs.set(jobId, { progress: Math.round(overallProgress), status: 'processing' });
+    }, { reencode: true });
+
+    completedSteps++;
+    jobs.set(jobId, { progress: Math.round((completedSteps / totalSteps) * 100), status: 'processing' });
+    log(`[Step 1/4] Camera A concatenation complete`);
+
+    // Step 2: Concatenate all Camera B videos (with re-encoding for VFR normalization)
+    const videoBPaths = b.map(id => findFileById(uploadsBDir, id));
+    log(`[Step 2/4] Concatenating ${videoBPaths.length} Camera B videos (with VFR re-encoding)...`);
+    const concatBPath = join(outputDir, 'concat_b.mp4');
+
+    let lastLoggedPercentB = 0;
+    await concatenateVideos(videoBPaths, concatBPath, (percent) => {
+      if (percent >= lastLoggedPercentB + 10) {
+        log(`  Camera B concatenation: ${percent}%`);
+        lastLoggedPercentB = percent;
+      }
+      const stepProgress = percent / 100;
+      const overallProgress = ((completedSteps + stepProgress) / totalSteps) * 100;
+      jobs.set(jobId, { progress: Math.round(overallProgress), status: 'processing' });
+    }, { reencode: true });
+
+    completedSteps++;
+    jobs.set(jobId, { progress: Math.round((completedSteps / totalSteps) * 100), status: 'processing' });
+    log(`[Step 2/4] Camera B concatenation complete`);
+
+    // Check durations and pad if necessary
+    log(`Checking video durations...`);
+    const durationA = await getVideoDuration(concatAPath);
+    const durationB = await getVideoDuration(concatBPath);
+    const formatDuration = (s) => `${Math.floor(s / 60)}m ${(s % 60).toFixed(1)}s`;
+    log(`  Camera A: ${formatDuration(durationA)} (${durationA.toFixed(2)}s)`);
+    log(`  Camera B: ${formatDuration(durationB)} (${durationB.toFixed(2)}s)`);
+
+    let finalConcatAPath = concatAPath;
+    let finalConcatBPath = concatBPath;
+
+    // Pad the shorter video if durations differ by more than 0.5 seconds
+    const durationDiff = Math.abs(durationA - durationB);
+    if (durationDiff > 0.5) {
+      const targetDuration = Math.max(durationA, durationB);
+      const paddingAmount = durationDiff;
+
+      if (durationA < durationB) {
+        log(`Padding Camera A video (+${paddingAmount.toFixed(1)}s to match Camera B)...`);
+        const paddedAPath = join(outputDir, 'concat_a_padded.mp4');
+        let lastLoggedPadPercent = 0;
+        await padVideo(concatAPath, paddedAPath, paddingAmount, (percent) => {
+          if (percent >= lastLoggedPadPercent + 20) {
+            log(`  Padding Camera A: ${percent}%`);
+            lastLoggedPadPercent = percent;
+          }
+        });
+        log(`Padding Camera A complete`);
+        finalConcatAPath = paddedAPath;
+      } else {
+        log(`Padding Camera B video (+${paddingAmount.toFixed(1)}s to match Camera A)...`);
+        const paddedBPath = join(outputDir, 'concat_b_padded.mp4');
+        let lastLoggedPadPercent = 0;
+        await padVideo(concatBPath, paddedBPath, paddingAmount, (percent) => {
+          if (percent >= lastLoggedPadPercent + 20) {
+            log(`  Padding Camera B: ${percent}%`);
+            lastLoggedPadPercent = percent;
+          }
+        });
+        log(`Padding Camera B complete`);
+        finalConcatBPath = paddedBPath;
+      }
+    } else {
+      log(`Duration difference (${durationDiff.toFixed(2)}s) is within tolerance, no padding needed`);
+    }
+
+    // Step 3: Combine side-by-side
+    log(`[Step 3/4] Combining videos side-by-side (hstack)...`);
+    const combinedPath = join(outputDir, 'combined.mp4');
+
+    let lastLoggedCombine = 0;
+    await combinePair(finalConcatAPath, finalConcatBPath, combinedPath, (percent) => {
+      if (percent >= lastLoggedCombine + 10) {
+        log(`  Side-by-side combining: ${percent}%`);
+        lastLoggedCombine = percent;
+      }
+      const stepProgress = percent / 100;
+      const overallProgress = ((completedSteps + stepProgress) / totalSteps) * 100;
+      jobs.set(jobId, { progress: Math.round(overallProgress), status: 'processing' });
+    });
+
+    completedSteps++;
+    jobs.set(jobId, { progress: Math.round((completedSteps / totalSteps) * 100), status: 'processing' });
+    log(`[Step 3/4] Side-by-side combination complete`);
+
+    // Step 4: Compress final video
+    log(`[Step 4/4] Compressing final video (CRF: ${config.crf || 28}, preset: ${config.preset || 'slow'})...`);
+    const finalPath = join(outputDir, 'final.mp4');
+
+    let lastLoggedCompress = 0;
+    await compressVideo(combinedPath, finalPath, config, (percent) => {
+      if (percent >= lastLoggedCompress + 10) {
+        log(`  Compression: ${percent}%`);
+        lastLoggedCompress = percent;
+      }
+      const stepProgress = percent / 100;
+      const overallProgress = ((completedSteps + stepProgress) / totalSteps) * 100;
+      jobs.set(jobId, { progress: Math.round(overallProgress), status: 'processing' });
+    });
+
+    completedSteps++;
+
+    // Mark as done
+    jobs.set(jobId, { progress: 100, status: 'done' });
+    log(`Job ${jobId} completed successfully!`);
+
+  } catch (error) {
+    log(`ERROR in job ${jobId}: ${error.message}`);
     jobs.set(jobId, {
       progress: Math.round((completedSteps / totalSteps) * 100),
       status: 'error',

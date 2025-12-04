@@ -26,8 +26,31 @@ function ConfigPanel({ config, onChange }) {
     onChange({ ...config, audioBitrate: e.target.value })
   }
 
+  const handleConcatenateFirstToggle = (e) => {
+    onChange({ ...config, concatenateFirst: e.target.checked })
+  }
+
   return (
     <div className="config-panel">
+      <h3>Processing Settings</h3>
+
+      <div className="config-section">
+        <div className="config-item">
+          <label className="checkbox-label concatenate-first-label">
+            <input
+              type="checkbox"
+              checked={config.concatenateFirst || false}
+              onChange={handleConcatenateFirstToggle}
+              className="config-checkbox"
+            />
+            <span>Concatenate First</span>
+          </label>
+          <p className="config-hint">
+            Use when cameras have different segment lengths. Concatenates all videos from each camera first, then combines side-by-side.
+          </p>
+        </div>
+      </div>
+
       <h3>Compression Settings</h3>
 
       <div className="config-section">
