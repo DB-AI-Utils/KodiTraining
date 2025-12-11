@@ -61,13 +61,25 @@ cd client && npm run lint
 └─────────────────────────────────────────────────────────────┘
 ```
 
-## FFmpeg Processing Pipeline
+## FFmpeg Processing Modes
+
+### Concatenate-First Mode (Default)
+Best when cameras have different segment lengths (e.g., one camera creates 40-second files, another creates 1-minute files).
+
+1. **Concatenate Camera A** - All Camera A videos joined with re-encoding (`fps=30` for VFR normalization)
+2. **Concatenate Camera B** - All Camera B videos joined with re-encoding
+3. **Pad shorter video** - If durations differ, pad shorter with cloned frames
+4. **Combine side-by-side** - `hstack` filter, scales to 720p, merges audio
+5. **Compress** - Final video encoded with libx264
+
+### Pair-by-Pair Mode
+Original mode for when both cameras have matching segment counts and lengths. Uncheck "Concatenate First" to use.
 
 1. **Combine pairs** - Each pair (a/file1 + b/file1) combined side-by-side with `hstack`
    - Forces `fps=30` to normalize variable frame rate cameras (Xiaomi VFR fix)
    - Scales both to 720p height, merges audio from both cameras
-2. **Concatenate** - All pair outputs joined using concat demuxer
-3. **Compress** - Final video encoded with libx264 (configurable CRF, preset, maxWidth, audioBitrate)
+2. **Concatenate** - All pair outputs joined using concat demuxer (stream copy)
+3. **Compress** - Final video encoded with libx264
 
 ## Key Implementation Details
 
@@ -84,8 +96,9 @@ Thumbnails are cropped to just the timestamp area (top-left 700x70 pixels) to he
 - Order sent to `/api/order` before processing starts
 
 ### Configuration Defaults
+- Concatenate First: true (use concatenate-first mode)
 - CRF: 28 (range 18-35, lower = better quality)
-- Preset: slow (x264 presets from ultrafast to veryslow)
+- Preset: superfast (x264 presets from ultrafast to veryslow)
 - Max Width: null (original width by default)
 - Audio Bitrate: 96k
 
