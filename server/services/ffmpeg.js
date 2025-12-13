@@ -13,9 +13,21 @@ ffmpeg.setFfprobePath(ffprobeStatic.path);
  * @param {string} videoB - Path to second video
  * @param {string} outputPath - Path for output video
  * @param {Function} onProgress - Progress callback (percent: 0-100)
+ * @param {Object} config - Optional compression config (for final output)
+ * @param {number} config.crf - Constant Rate Factor (default: 18)
+ * @param {string} config.preset - Encoding preset (default: 'veryfast')
+ * @param {number} config.maxWidth - Maximum width for scaling (optional)
+ * @param {string} config.audioBitrate - Audio bitrate (default: '192k')
  * @returns {Promise<void>}
  */
-export function combinePair(videoA, videoB, outputPath, onProgress) {
+export function combinePair(videoA, videoB, outputPath, onProgress, config = {}) {
+  const {
+    crf = 18,
+    preset = 'veryfast',
+    maxWidth = null,
+    audioBitrate = '192k'
+  } = config;
+
   return new Promise((resolve, reject) => {
     const command = ffmpeg();
 
@@ -24,21 +36,35 @@ export function combinePair(videoA, videoB, outputPath, onProgress) {
     command.input(videoB);
 
     // Apply complex filter for side-by-side layout with audio merge
-    // Force fps=30 to handle variable frame rate cameras (like Xiaomi)
-    const filterComplex = [
-      '[0:v]fps=30,scale=-2:720,setsar=1[left]',
-      '[1:v]fps=30,scale=-2:720,setsar=1[right]',
+    // VFR normalization (-vsync cfr) happens at output, not in filter chain
+    const filterParts = [
+      '[0:v]scale=-2:720,setsar=1[left]',
+      '[1:v]scale=-2:720,setsar=1[right]',
       '[left][right]hstack=inputs=2[v]',
       '[0:a][1:a]amerge=inputs=2[a]'
-    ].join(';');
+    ];
+
+    // Add final scaling if maxWidth specified
+    if (maxWidth) {
+      filterParts[2] = '[left][right]hstack=inputs=2[vstacked]';
+      filterParts.push(`[vstacked]scale=${maxWidth}:-2[v]`);
+    }
+
+    command.complexFilter(filterParts.join(';'));
 
     command
-      .complexFilter(filterComplex)
       .outputOptions([
         '-map', '[v]',
-        '-map', '[a]'
-      ])
-      .output(outputPath);
+        '-map', '[a]',
+        '-vsync', 'cfr',  // Normalize VFR from both cameras to constant frame rate
+        '-c:v', 'libx264',
+        '-preset', preset,
+        '-crf', `${crf}`,
+        '-c:a', 'aac',
+        '-b:a', audioBitrate
+      ]);
+
+    command.output(outputPath);
 
     // Handle progress updates
     command.on('progress', (progress) => {
@@ -127,11 +153,12 @@ export async function concatenateVideos(inputPaths, outputPath, onProgress, opti
         ]);
 
       if (reencode) {
-        // Re-encode with fps normalization for VFR camera files
+        // Re-encode with VFR→CFR normalization (no frame rate change, just constant timing)
+        // Using -vsync cfr instead of fps=30 - much faster, keeps original ~20fps
         command
-          .videoFilter('fps=30')
           .videoCodec('libx264')
           .outputOptions([
+            '-vsync', 'cfr',
             '-preset', 'veryfast',
             '-crf', '18'
           ])

@@ -302,9 +302,9 @@ async function processVideosConcatenateFirst(jobId, order, config) {
   log(`Camera A: ${a.length} videos, Camera B: ${b.length} videos`);
   log(`Config: CRF=${config.crf || 28}, preset=${config.preset || 'slow'}, maxWidth=${config.maxWidth || 'original'}`);
 
-  // Total steps: concat_a + concat_b + (optional pad) + combine + compress
+  // Total steps: concat_a + concat_b + (optional pad) + combine+compress (merged)
   // We'll count pad as part of the combine step for simplicity
-  const totalSteps = 4;
+  const totalSteps = 3;
   let completedSteps = 0;
 
   // Ensure output directory exists
@@ -319,9 +319,9 @@ async function processVideosConcatenateFirst(jobId, order, config) {
   const uploadsBDir = join(__dirname, '../../uploads/b');
 
   try {
-    // Step 1: Concatenate all Camera A videos (with re-encoding for VFR normalization)
+    // Step 1: Concatenate all Camera A videos (stream copy - fast, no re-encoding)
     const videoAPaths = a.map(id => findFileById(uploadsADir, id));
-    log(`[Step 1/4] Concatenating ${videoAPaths.length} Camera A videos (with VFR re-encoding)...`);
+    log(`[Step 1/3] Concatenating ${videoAPaths.length} Camera A videos (stream copy)...`);
     const concatAPath = join(outputDir, 'concat_a.mp4');
 
     let lastLoggedPercentA = 0;
@@ -333,15 +333,15 @@ async function processVideosConcatenateFirst(jobId, order, config) {
       const stepProgress = percent / 100;
       const overallProgress = ((completedSteps + stepProgress) / totalSteps) * 100;
       jobs.set(jobId, { progress: Math.round(overallProgress), status: 'processing' });
-    }, { reencode: true });
+    }, { reencode: false });  // Stream copy - no re-encoding needed for same-camera concat
 
     completedSteps++;
     jobs.set(jobId, { progress: Math.round((completedSteps / totalSteps) * 100), status: 'processing' });
-    log(`[Step 1/4] Camera A concatenation complete`);
+    log(`[Step 1/3] Camera A concatenation complete`);
 
-    // Step 2: Concatenate all Camera B videos (with re-encoding for VFR normalization)
+    // Step 2: Concatenate all Camera B videos (stream copy - fast, no re-encoding)
     const videoBPaths = b.map(id => findFileById(uploadsBDir, id));
-    log(`[Step 2/4] Concatenating ${videoBPaths.length} Camera B videos (with VFR re-encoding)...`);
+    log(`[Step 2/3] Concatenating ${videoBPaths.length} Camera B videos (stream copy)...`);
     const concatBPath = join(outputDir, 'concat_b.mp4');
 
     let lastLoggedPercentB = 0;
@@ -353,11 +353,11 @@ async function processVideosConcatenateFirst(jobId, order, config) {
       const stepProgress = percent / 100;
       const overallProgress = ((completedSteps + stepProgress) / totalSteps) * 100;
       jobs.set(jobId, { progress: Math.round(overallProgress), status: 'processing' });
-    }, { reencode: true });
+    }, { reencode: false });  // Stream copy - no re-encoding needed for same-camera concat
 
     completedSteps++;
     jobs.set(jobId, { progress: Math.round((completedSteps / totalSteps) * 100), status: 'processing' });
-    log(`[Step 2/4] Camera B concatenation complete`);
+    log(`[Step 2/3] Camera B concatenation complete`);
 
     // Check durations and pad if necessary
     log(`Checking video durations...`);
@@ -405,39 +405,20 @@ async function processVideosConcatenateFirst(jobId, order, config) {
       log(`Duration difference (${durationDiff.toFixed(2)}s) is within tolerance, no padding needed`);
     }
 
-    // Step 3: Combine side-by-side
-    log(`[Step 3/4] Combining videos side-by-side (hstack)...`);
-    const combinedPath = join(outputDir, 'combined.mp4');
+    // Step 3: Combine side-by-side + final compression (merged into single pass)
+    log(`[Step 3/3] Combining side-by-side + compressing (CRF: ${config.crf || 28}, preset: ${config.preset || 'superfast'})...`);
+    const finalPath = join(outputDir, 'final.mp4');
 
     let lastLoggedCombine = 0;
-    await combinePair(finalConcatAPath, finalConcatBPath, combinedPath, (percent) => {
+    await combinePair(finalConcatAPath, finalConcatBPath, finalPath, (percent) => {
       if (percent >= lastLoggedCombine + 10) {
-        log(`  Side-by-side combining: ${percent}%`);
+        log(`  Combining + compressing: ${percent}%`);
         lastLoggedCombine = percent;
       }
       const stepProgress = percent / 100;
       const overallProgress = ((completedSteps + stepProgress) / totalSteps) * 100;
       jobs.set(jobId, { progress: Math.round(overallProgress), status: 'processing' });
-    });
-
-    completedSteps++;
-    jobs.set(jobId, { progress: Math.round((completedSteps / totalSteps) * 100), status: 'processing' });
-    log(`[Step 3/4] Side-by-side combination complete`);
-
-    // Step 4: Compress final video
-    log(`[Step 4/4] Compressing final video (CRF: ${config.crf || 28}, preset: ${config.preset || 'slow'})...`);
-    const finalPath = join(outputDir, 'final.mp4');
-
-    let lastLoggedCompress = 0;
-    await compressVideo(combinedPath, finalPath, config, (percent) => {
-      if (percent >= lastLoggedCompress + 10) {
-        log(`  Compression: ${percent}%`);
-        lastLoggedCompress = percent;
-      }
-      const stepProgress = percent / 100;
-      const overallProgress = ((completedSteps + stepProgress) / totalSteps) * 100;
-      jobs.set(jobId, { progress: Math.round(overallProgress), status: 'processing' });
-    });
+    }, config);  // Pass compression config directly
 
     completedSteps++;
 
