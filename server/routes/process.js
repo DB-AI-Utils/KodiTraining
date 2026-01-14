@@ -370,9 +370,9 @@ async function processVideosConcatenateFirst(jobId, order, config) {
     let finalConcatAPath = concatAPath;
     let finalConcatBPath = concatBPath;
 
-    // Pad the shorter video if durations differ by more than 5 seconds
+    // Pad the shorter video if durations differ by more than 15 seconds
     const durationDiff = Math.abs(durationA - durationB);
-    if (durationDiff > 5) {
+    if (durationDiff > 15) {
       const targetDuration = Math.max(durationA, durationB);
       const paddingAmount = durationDiff;
 
