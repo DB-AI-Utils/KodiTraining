@@ -5,6 +5,7 @@ import fs from 'fs';
 import { v4 as uuidv4 } from 'uuid';
 import { fileURLToPath } from 'url';
 import { exec } from 'child_process';
+import { getVideoDuration } from '../services/ffmpeg.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const router = express.Router();
@@ -49,16 +50,27 @@ const upload = multer({
 });
 
 // Upload single file to camera
-router.post('/:camera', upload.single('video'), (req, res) => {
+router.post('/:camera', upload.single('video'), async (req, res) => {
   if (!req.file) {
     return res.status(400).json({ error: 'No file uploaded' });
+  }
+
+  let duration = null;
+  try {
+    const d = await getVideoDuration(req.file.path);
+    if (Number.isFinite(d) && d >= 0) {
+      duration = d;
+    }
+  } catch (err) {
+    console.warn(`Could not get duration for ${req.file.originalname}: ${err.message}`);
   }
 
   res.json({
     id: path.basename(req.file.filename, path.extname(req.file.filename)),
     filename: req.file.originalname,
     camera: req.params.camera,
-    path: req.file.path
+    path: req.file.path,
+    duration
   });
 });
 

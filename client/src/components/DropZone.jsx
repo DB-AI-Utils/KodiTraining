@@ -1,6 +1,17 @@
 import { useState, useRef } from 'react'
 import { uploadFile, deleteFile } from '../api.js'
 
+function formatDuration(totalSeconds) {
+  const s = Math.floor(totalSeconds)
+  const h = Math.floor(s / 3600)
+  const m = Math.floor((s % 3600) / 60)
+  const sec = s % 60
+  if (h > 0) {
+    return `${h}:${String(m).padStart(2, '0')}:${String(sec).padStart(2, '0')}`
+  }
+  return `${m}:${String(sec).padStart(2, '0')}`
+}
+
 function DropZone({ camera, files, onFilesChange }) {
   const [isDragging, setIsDragging] = useState(false)
   const [uploadingFiles, setUploadingFiles] = useState([])
@@ -223,7 +234,10 @@ function DropZone({ camera, files, onFilesChange }) {
 
       {files.length > 0 && (
         <div className="file-list">
-          <h4>Uploaded Files ({files.length})</h4>
+          <h4>Uploaded Files ({files.length}){(() => {
+            const total = files.reduce((sum, f) => sum + (Number.isFinite(f.duration) ? f.duration : 0), 0)
+            return total > 0 ? ` · Total: ${formatDuration(total)}` : ''
+          })()}</h4>
           {files.map((file, index) => (
             <div
               key={file.id}
