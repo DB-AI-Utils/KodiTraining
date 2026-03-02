@@ -10,8 +10,8 @@ function App() {
   const [filesA, setFilesA] = useState([])
   const [filesB, setFilesB] = useState([])
   const [config, setConfig] = useState({
-    crf: 28,
-    preset: 'superfast',
+    crf: 35,
+    preset: 'slower',
     maxWidth: null,
     audioBitrate: '96k',
     concatenateFirst: true
