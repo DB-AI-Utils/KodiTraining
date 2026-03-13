@@ -622,6 +622,377 @@
   font-size: 0.95rem;
 }
 
+/* PiImport Component Styles */
+.pi-import {
+  background: #f8f9fa;
+  border-radius: 8px;
+  margin-bottom: 30px;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+  overflow: hidden;
+}
+
+.pi-import-header {
+  display: flex;
+  align-items: center;
+  padding: 16px 20px;
+  cursor: pointer;
+  user-select: none;
+  transition: background 0.2s ease;
+}
+
+.pi-import-header:hover {
+  background: #f0f1f3;
+}
+
+.pi-import-title {
+  font-weight: 600;
+  color: #333;
+  font-size: 1rem;
+  flex: 1;
+}
+
+.pi-status-dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  margin-right: 12px;
+  flex-shrink: 0;
+}
+
+.pi-status-dot.gray {
+  background: #ccc;
+}
+
+.pi-status-dot.green {
+  background: #28a745;
+  box-shadow: 0 0 6px rgba(40, 167, 69, 0.4);
+}
+
+.pi-status-dot.red {
+  background: #dc3545;
+  box-shadow: 0 0 6px rgba(220, 53, 69, 0.4);
+}
+
+.pi-chevron {
+  color: #666;
+  transition: transform 0.2s ease;
+  flex-shrink: 0;
+}
+
+.pi-chevron-expanded {
+  transform: rotate(180deg);
+}
+
+.pi-import-body {
+  padding: 0 20px 20px;
+}
+
+.pi-error {
+  background: #fee;
+  border: 1px solid #fcc;
+  border-radius: 6px;
+  padding: 10px 14px;
+  color: #c33;
+  font-size: 0.9rem;
+  margin-bottom: 12px;
+}
+
+.pi-success {
+  background: #efd;
+  border: 1px solid #bda;
+  border-radius: 6px;
+  padding: 10px 14px;
+  color: #285;
+  font-size: 0.9rem;
+  margin-bottom: 12px;
+}
+
+.pi-config {
+  margin-bottom: 16px;
+}
+
+.pi-config-row {
+  display: flex;
+  gap: 10px;
+}
+
+.pi-config-input {
+  flex: 1;
+  padding: 10px 12px;
+  border: 2px solid #ddd;
+  border-radius: 6px;
+  font-size: 0.95rem;
+  color: #333;
+  background: white;
+  transition: border-color 0.2s ease;
+}
+
+.pi-config-input:focus {
+  outline: none;
+  border-color: #667eea;
+  box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.1);
+}
+
+.pi-config-input:disabled {
+  background: #f0f0f0;
+  color: #999;
+}
+
+.pi-config-btn {
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  color: white;
+  border: none;
+  padding: 10px 24px;
+  font-size: 0.95rem;
+  border-radius: 6px;
+  cursor: pointer;
+  font-weight: 600;
+  transition: all 0.2s ease;
+  white-space: nowrap;
+}
+
+.pi-config-btn:hover:not(:disabled) {
+  transform: translateY(-1px);
+  box-shadow: 0 3px 10px rgba(102, 126, 234, 0.3);
+}
+
+.pi-config-btn:disabled {
+  background: #ccc;
+  cursor: not-allowed;
+}
+
+.pi-config-status {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 16px;
+  padding: 8px 12px;
+  background: white;
+  border-radius: 6px;
+}
+
+.pi-config-url {
+  flex: 1;
+  font-size: 0.9rem;
+  color: #666;
+  font-family: monospace;
+}
+
+.pi-config-edit {
+  background: none;
+  border: 1px solid #ddd;
+  border-radius: 4px;
+  padding: 4px 12px;
+  font-size: 0.85rem;
+  color: #666;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.pi-config-edit:hover {
+  border-color: #667eea;
+  color: #667eea;
+}
+
+.pi-toolbar {
+  display: flex;
+  justify-content: flex-end;
+  margin-bottom: 12px;
+}
+
+.pi-refresh-btn {
+  background: white;
+  border: 1px solid #ddd;
+  border-radius: 6px;
+  padding: 6px 16px;
+  font-size: 0.85rem;
+  color: #555;
+  cursor: pointer;
+  font-weight: 500;
+  transition: all 0.2s ease;
+}
+
+.pi-refresh-btn:hover:not(:disabled) {
+  border-color: #667eea;
+  color: #667eea;
+}
+
+.pi-refresh-btn:disabled {
+  color: #ccc;
+  cursor: not-allowed;
+}
+
+.pi-empty {
+  text-align: center;
+  color: #999;
+  font-size: 0.95rem;
+  padding: 20px 0;
+  margin: 0;
+}
+
+.pi-session {
+  background: white;
+  border-radius: 6px;
+  margin-bottom: 10px;
+  overflow: hidden;
+  border: 1px solid #eee;
+}
+
+.pi-session-header {
+  display: flex;
+  align-items: center;
+  padding: 10px 14px;
+  background: #fafafa;
+  border-bottom: 1px solid #eee;
+  gap: 10px;
+}
+
+.pi-session-select {
+  display: flex;
+  align-items: center;
+  cursor: pointer;
+}
+
+.pi-checkbox {
+  width: 16px;
+  height: 16px;
+  cursor: pointer;
+  accent-color: #667eea;
+}
+
+.pi-session-time {
+  font-weight: 600;
+  font-size: 0.9rem;
+  color: #333;
+  flex: 1;
+}
+
+.pi-session-count {
+  font-size: 0.8rem;
+  color: #999;
+}
+
+.pi-session-recordings {
+  padding: 4px 0;
+}
+
+.pi-recording {
+  display: flex;
+  align-items: center;
+  padding: 8px 14px;
+  gap: 10px;
+  cursor: pointer;
+  transition: background 0.15s ease;
+}
+
+.pi-recording:hover {
+  background: #f8f9ff;
+}
+
+.pi-camera-label {
+  font-size: 0.75rem;
+  font-weight: 700;
+  padding: 2px 8px;
+  border-radius: 3px;
+  text-transform: uppercase;
+  flex-shrink: 0;
+}
+
+.pi-camera-a {
+  background: #e8f0fe;
+  color: #1967d2;
+}
+
+.pi-camera-b {
+  background: #fce8e6;
+  color: #c5221f;
+}
+
+.pi-rec-name {
+  flex: 1;
+  font-size: 0.85rem;
+  color: #333;
+  word-break: break-all;
+}
+
+.pi-rec-meta {
+  font-size: 0.8rem;
+  color: #999;
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+
+.pi-selection-summary {
+  text-align: center;
+  font-size: 0.9rem;
+  color: #555;
+  font-weight: 500;
+  padding: 10px 0;
+}
+
+.pi-import-progress {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 12px;
+}
+
+.pi-import-bar {
+  flex: 1;
+  height: 20px;
+  background: #f0f0f0;
+  border-radius: 10px;
+  overflow: hidden;
+  box-shadow: inset 0 1px 3px rgba(0, 0, 0, 0.1);
+}
+
+.pi-import-bar-fill {
+  height: 100%;
+  background: linear-gradient(90deg, #667eea 0%, #764ba2 100%);
+  transition: width 0.3s ease;
+  border-radius: 10px;
+}
+
+.pi-import-pct {
+  font-size: 0.9rem;
+  font-weight: 600;
+  color: #333;
+  min-width: 40px;
+  text-align: right;
+}
+
+.pi-import-btn {
+  width: 100%;
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  color: white;
+  border: none;
+  padding: 12px 24px;
+  font-size: 1rem;
+  border-radius: 8px;
+  cursor: pointer;
+  font-weight: 600;
+  transition: all 0.3s ease;
+}
+
+.pi-import-btn:hover:not(:disabled) {
+  transform: translateY(-2px);
+  box-shadow: 0 4px 12px rgba(102, 126, 234, 0.4);
+}
+
+.pi-import-btn:disabled {
+  background: #ccc;
+  cursor: not-allowed;
+  opacity: 0.6;
+}
+
+.pi-unreachable {
+  text-align: center;
+  color: #c33;
+  font-size: 0.9rem;
+  padding: 16px 0;
+  margin: 0;
+}
+
 /* Responsive design */
 @media (max-width: 768px) {
   .container {

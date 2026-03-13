@@ -134,3 +134,77 @@ export async function reset() {
 
   return response.json();
 }
+
+export async function getPiConfig() {
+  const response = await fetch('/api/pi/config');
+
+  if (!response.ok) {
+    const error = await response.json();
+    throw new Error(error.error || 'Failed to get Pi config');
+  }
+
+  return response.json();
+}
+
+export async function setPiConfig(url) {
+  const response = await fetch('/api/pi/config', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ url }),
+  });
+
+  if (!response.ok) {
+    const error = await response.json();
+    throw new Error(error.error || 'Failed to save Pi config');
+  }
+
+  return response.json();
+}
+
+export async function getPiStatus() {
+  const response = await fetch('/api/pi/status');
+
+  if (!response.ok) {
+    const error = await response.json();
+    throw new Error(error.error || 'Failed to get Pi status');
+  }
+
+  return response.json();
+}
+
+export async function getPiRecordings() {
+  const response = await fetch('/api/pi/recordings');
+
+  if (!response.ok) {
+    const error = await response.json();
+    throw new Error(error.error || 'Failed to fetch recordings');
+  }
+
+  return response.json();
+}
+
+export async function importFromPi(filenames) {
+  const response = await fetch('/api/pi/import', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ filenames }),
+  });
+
+  if (!response.ok) {
+    const error = await response.json();
+    throw new Error(error.error || 'Failed to start import');
+  }
+
+  return response.json();
+}
+
+export async function getPiImportStatus(jobId) {
+  const response = await fetch(`/api/pi/import-status/${jobId}`);
+
+  if (!response.ok) {
+    const error = await response.json();
+    throw new Error(error.error || 'Failed to get import status');
+  }
+
+  return response.json();
+}

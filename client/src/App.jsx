@@ -2,6 +2,7 @@ import { useState, useEffect, useRef } from 'react'
 import './App.css'
 import DropZone from './components/DropZone'
 import ConfigPanel from './components/ConfigPanel'
+import PiImport from './components/PiImport'
 import { setOrder, startProcess, getStatus, getDownloadUrl, reset } from './api.js'
 
 function App() {
@@ -143,6 +144,11 @@ function App() {
       <header className="app-header">
         <h1>KodiTraining - Dual Camera Video Processor</h1>
       </header>
+
+      <PiImport onImportComplete={(newA, newB) => {
+        setFilesA(prev => [...prev, ...newA])
+        setFilesB(prev => [...prev, ...newB])
+      }} />
 
       <div className="container">
         <div className="column">
