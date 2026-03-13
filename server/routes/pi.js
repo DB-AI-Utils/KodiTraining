@@ -102,7 +102,7 @@ router.get('/status', async (req, res) => {
     const data = await piRes.json();
     res.json(data);
   } catch (err) {
-    res.json({ error: 'Pi not reachable', details: err.message });
+    res.status(502).json({ error: 'Pi not reachable', details: err.message });
   }
 });
 
@@ -141,7 +141,7 @@ router.get('/recordings', async (req, res) => {
 
     res.json({ sessions });
   } catch (err) {
-    res.json({ error: 'Failed to fetch recordings', details: err.message });
+    res.status(502).json({ error: 'Failed to fetch recordings', details: err.message });
   }
 });
 
@@ -181,55 +181,68 @@ router.get('/import-status/:jobId', (req, res) => {
 async function processImport(jobId, filenames) {
   const filesA = [];
   const filesB = [];
+  const downloadedPaths = [];
 
   await fs.mkdir(join(UPLOADS_BASE, 'a'), { recursive: true });
   await fs.mkdir(join(UPLOADS_BASE, 'b'), { recursive: true });
 
-  for (let i = 0; i < filenames.length; i++) {
-    const filename = filenames[i];
+  try {
+    for (let i = 0; i < filenames.length; i++) {
+      const filename = filenames[i];
 
-    const camMatch = filename.match(/^camera_([ab])_/);
-    if (!camMatch) {
-      throw new Error(`Cannot determine camera from filename: ${filename}`);
-    }
-    const camera = camMatch[1];
-
-    const piRes = await piFetch(`/api/recordings/${encodeURIComponent(filename)}`, { timeout: 0 });
-
-    const id = uuidv4();
-    const destPath = join(UPLOADS_BASE, camera, `${id}.mp4`);
-
-    const fileStream = createWriteStream(destPath);
-    await pipeline(piRes.body, fileStream);
-
-    let duration = null;
-    try {
-      const d = await getVideoDuration(destPath);
-      if (Number.isFinite(d) && d >= 0) {
-        duration = d;
+      const camMatch = filename.match(/^camera_([ab])_/);
+      if (!camMatch) {
+        throw new Error(`Cannot determine camera from filename: ${filename}`);
       }
-    } catch (err) {
-      console.warn(`Could not get duration for ${filename}: ${err.message}`);
+      const camera = camMatch[1];
+
+      const piRes = await piFetch(`/api/recordings/${encodeURIComponent(filename)}`, { timeout: 0 });
+
+      const id = uuidv4();
+      const destPath = join(UPLOADS_BASE, camera, `${id}.mp4`);
+
+      const fileStream = createWriteStream(destPath);
+      await pipeline(piRes.body, fileStream);
+      downloadedPaths.push(destPath);
+
+      let duration = null;
+      try {
+        const d = await getVideoDuration(destPath);
+        if (Number.isFinite(d) && d >= 0) {
+          duration = d;
+        }
+      } catch (err) {
+        console.warn(`Could not get duration for ${filename}: ${err.message}`);
+      }
+
+      const fileObj = {
+        id,
+        filename,
+        camera,
+        path: destPath,
+        duration,
+      };
+
+      if (camera === 'a') {
+        filesA.push(fileObj);
+      } else {
+        filesB.push(fileObj);
+      }
+
+      importJobs.set(jobId, {
+        status: 'processing',
+        progress: Math.round(((i + 1) / filenames.length) * 100),
+      });
     }
-
-    const fileObj = {
-      id,
-      filename,
-      camera,
-      path: destPath,
-      duration,
-    };
-
-    if (camera === 'a') {
-      filesA.push(fileObj);
-    } else {
-      filesB.push(fileObj);
+  } catch (err) {
+    for (const filePath of downloadedPaths) {
+      try {
+        await fs.unlink(filePath);
+      } catch {
+        // already gone or inaccessible
+      }
     }
-
-    importJobs.set(jobId, {
-      status: 'processing',
-      progress: Math.round(((i + 1) / filenames.length) * 100),
-    });
+    throw err;
   }
 
   importJobs.set(jobId, {
