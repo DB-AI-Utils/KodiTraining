@@ -145,6 +145,7 @@ function PiImport({ onImportComplete }) {
   }
 
   const handleToggleExpand = () => {
+    if (importing) return
     setExpanded(prev => !prev)
   }
 
@@ -324,13 +325,13 @@ function PiImport({ onImportComplete }) {
                 <p className="pi-empty">No recordings found on Pi.</p>
               )}
 
-              {recordings && recordings.map((session, si) => {
+              {recordings && recordings.map((session) => {
                 const sessionFilenames = session.recordings.map(r => r.filename)
                 const allSelected = sessionFilenames.every(f => selected.has(f))
                 const someSelected = sessionFilenames.some(f => selected.has(f))
 
                 return (
-                  <div key={si} className="pi-session">
+                  <div key={session.startTime} className="pi-session">
                     <div className="pi-session-header">
                       <label className="pi-session-select" onClick={e => e.stopPropagation()}>
                         <input
