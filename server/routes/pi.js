@@ -67,6 +67,12 @@ router.post('/config', async (req, res) => {
     return res.status(400).json({ error: 'url is required' });
   }
 
+  try {
+    new URL(url);
+  } catch {
+    return res.status(400).json({ error: 'Invalid URL format' });
+  }
+
   const cleanUrl = url.replace(/\/+$/, '');
 
   try {
