@@ -4,6 +4,7 @@ import uploadRoutes from './routes/upload.js';
 import resetRoutes from './routes/reset.js';
 import processRoutes from './routes/process.js';
 import piRoutes from './routes/pi.js';
+import cleanRoutes from './routes/clean.js';
 
 const app = express();
 const PORT = 3001;
@@ -19,6 +20,7 @@ app.use('/upload', uploadRoutes);
 app.use('/reset', resetRoutes);
 app.use('/api', processRoutes);
 app.use('/api/pi', piRoutes);
+app.use('/api/clean-all', cleanRoutes);
 
 app.listen(PORT, () => {
   console.log(`Server running on http://localhost:${PORT}`);

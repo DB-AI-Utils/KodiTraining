@@ -33,7 +33,7 @@ function formatSessionTime(isoString) {
   })
 }
 
-function PiImport({ onImportComplete }) {
+function PiImport({ onImportComplete, resetKey }) {
   const [config, setConfig] = useState(null)
   const [connected, setConnected] = useState(false)
   const [recordings, setRecordings] = useState(null)
@@ -50,6 +50,16 @@ function PiImport({ onImportComplete }) {
 
   const statusIntervalRef = useRef(null)
   const importIntervalRef = useRef(null)
+
+  useEffect(() => {
+    if (resetKey > 0) {
+      setRecordings(null)
+      setSelected(new Set())
+      setSuccessMsg(null)
+      setError(null)
+      setImportProgress(0)
+    }
+  }, [resetKey])
 
   const clearError = useCallback(() => {
     setTimeout(() => setError(null), 5000)

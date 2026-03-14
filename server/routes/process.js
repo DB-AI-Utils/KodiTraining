@@ -450,4 +450,11 @@ async function processVideosConcatenateFirst(jobId, order, config) {
   }
 }
 
+export function hasActiveJobs() {
+  for (const job of jobs.values()) {
+    if (job.status === 'processing') return true;
+  }
+  return false;
+}
+
 export default router;

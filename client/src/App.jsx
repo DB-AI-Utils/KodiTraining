@@ -3,7 +3,7 @@ import './App.css'
 import DropZone from './components/DropZone'
 import ConfigPanel from './components/ConfigPanel'
 import PiImport from './components/PiImport'
-import { setOrder, startProcess, getStatus, getDownloadUrl, reset } from './api.js'
+import { setOrder, startProcess, getStatus, getDownloadUrl, reset, cleanAll } from './api.js'
 
 function App() {
   const [progress, setProgress] = useState(0)
@@ -23,6 +23,8 @@ function App() {
   const [jobId, setJobId] = useState(null)
   const [status, setStatus] = useState('idle')
   const [error, setError] = useState(null)
+  const [cleanAllKey, setCleanAllKey] = useState(0)
+  const [isCleaning, setIsCleaning] = useState(false)
 
   // Ref for polling interval
   const pollingIntervalRef = useRef(null)
@@ -73,6 +75,36 @@ function App() {
       }
     } catch (err) {
       setError(err.message || 'Failed to reset')
+    }
+  }
+
+  const handleCleanAll = async () => {
+    try {
+      setIsCleaning(true)
+      setError(null)
+      const result = await cleanAll()
+
+      setFilesA([])
+      setFilesB([])
+      setProgress(0)
+      setDownloadUrl(null)
+      setStatus('idle')
+      setIsProcessing(false)
+      setJobId(null)
+      setCleanAllKey(prev => prev + 1)
+
+      if (pollingIntervalRef.current) {
+        clearInterval(pollingIntervalRef.current)
+        pollingIntervalRef.current = null
+      }
+
+      if (result.piError) {
+        setError(`Local files cleaned. Pi cleanup failed: ${result.piError}`)
+      }
+    } catch (err) {
+      setError(err.message || 'Clean all failed')
+    } finally {
+      setIsCleaning(false)
     }
   }
 
@@ -145,10 +177,13 @@ function App() {
         <h1>KodiTraining - Dual Camera Video Processor</h1>
       </header>
 
-      <PiImport onImportComplete={(newA, newB) => {
-        setFilesA(prev => [...prev, ...newA])
-        setFilesB(prev => [...prev, ...newB])
-      }} />
+      <PiImport
+        resetKey={cleanAllKey}
+        onImportComplete={(newA, newB) => {
+          setFilesA(prev => [...prev, ...newA])
+          setFilesB(prev => [...prev, ...newB])
+        }}
+      />
 
       <div className="container">
         <div className="column">
@@ -221,6 +256,13 @@ function App() {
           >
             Download Processed Video
           </a>
+          <button
+            className="clean-all-button"
+            onClick={handleCleanAll}
+            disabled={isCleaning}
+          >
+            {isCleaning ? 'Cleaning...' : 'Clean All'}
+          </button>
         </div>
       )}
     </div>

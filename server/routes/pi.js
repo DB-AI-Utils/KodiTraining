@@ -253,4 +253,11 @@ async function processImport(jobId, filenames) {
   });
 }
 
+export function hasActiveImports() {
+  for (const job of importJobs.values()) {
+    if (job.status === 'processing') return true;
+  }
+  return false;
+}
+
 export default router;

@@ -20,7 +20,7 @@ const directories = [
 /**
  * Clear all files in a directory but keep the directory itself
  */
-async function clearDirectory(dirPath) {
+export async function clearDirectory(dirPath) {
   try {
     const files = await fs.readdir(dirPath);
     await Promise.all(

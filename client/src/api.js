@@ -135,6 +135,19 @@ export async function reset() {
   return response.json();
 }
 
+export async function cleanAll() {
+  const response = await fetch('/api/clean-all', {
+    method: 'POST',
+  });
+
+  if (!response.ok) {
+    const error = await response.json();
+    throw new Error(error.error || 'Clean all failed');
+  }
+
+  return response.json();
+}
+
 export async function getPiConfig() {
   const response = await fetch('/api/pi/config');
 
