@@ -321,43 +321,57 @@ async function processVideosConcatenateFirst(jobId, order, config) {
   try {
     // Step 1: Concatenate all Camera A videos (stream copy - fast, no re-encoding)
     const videoAPaths = a.map(id => findFileById(uploadsADir, id));
-    log(`[Step 1/3] Concatenating ${videoAPaths.length} Camera A videos (stream copy)...`);
-    const concatAPath = join(outputDir, 'concat_a.mp4');
+    let concatAPath;
 
-    let lastLoggedPercentA = 0;
-    await concatenateVideos(videoAPaths, concatAPath, (percent) => {
-      if (percent >= lastLoggedPercentA + 10) {
-        log(`  Camera A concatenation: ${percent}%`);
-        lastLoggedPercentA = percent;
-      }
-      const stepProgress = percent / 100;
-      const overallProgress = ((completedSteps + stepProgress) / totalSteps) * 100;
-      jobs.set(jobId, { progress: Math.round(overallProgress), status: 'processing' });
-    }, { reencode: false });  // Stream copy - no re-encoding needed for same-camera concat
+    if (videoAPaths.length === 1) {
+      concatAPath = videoAPaths[0];
+      log(`[Step 1/3] Camera A: single file, skipping concatenation`);
+    } else {
+      concatAPath = join(outputDir, 'concat_a.mp4');
+      log(`[Step 1/3] Concatenating ${videoAPaths.length} Camera A videos (stream copy)...`);
+
+      let lastLoggedPercentA = 0;
+      await concatenateVideos(videoAPaths, concatAPath, (percent) => {
+        if (percent >= lastLoggedPercentA + 10) {
+          log(`  Camera A concatenation: ${percent}%`);
+          lastLoggedPercentA = percent;
+        }
+        const stepProgress = percent / 100;
+        const overallProgress = ((completedSteps + stepProgress) / totalSteps) * 100;
+        jobs.set(jobId, { progress: Math.round(overallProgress), status: 'processing' });
+      }, { reencode: false });
+    }
 
     completedSteps++;
     jobs.set(jobId, { progress: Math.round((completedSteps / totalSteps) * 100), status: 'processing' });
-    log(`[Step 1/3] Camera A concatenation complete`);
+    log(`[Step 1/3] Camera A complete`);
 
     // Step 2: Concatenate all Camera B videos (stream copy - fast, no re-encoding)
     const videoBPaths = b.map(id => findFileById(uploadsBDir, id));
-    log(`[Step 2/3] Concatenating ${videoBPaths.length} Camera B videos (stream copy)...`);
-    const concatBPath = join(outputDir, 'concat_b.mp4');
+    let concatBPath;
 
-    let lastLoggedPercentB = 0;
-    await concatenateVideos(videoBPaths, concatBPath, (percent) => {
-      if (percent >= lastLoggedPercentB + 10) {
-        log(`  Camera B concatenation: ${percent}%`);
-        lastLoggedPercentB = percent;
-      }
-      const stepProgress = percent / 100;
-      const overallProgress = ((completedSteps + stepProgress) / totalSteps) * 100;
-      jobs.set(jobId, { progress: Math.round(overallProgress), status: 'processing' });
-    }, { reencode: false });  // Stream copy - no re-encoding needed for same-camera concat
+    if (videoBPaths.length === 1) {
+      concatBPath = videoBPaths[0];
+      log(`[Step 2/3] Camera B: single file, skipping concatenation`);
+    } else {
+      concatBPath = join(outputDir, 'concat_b.mp4');
+      log(`[Step 2/3] Concatenating ${videoBPaths.length} Camera B videos (stream copy)...`);
+
+      let lastLoggedPercentB = 0;
+      await concatenateVideos(videoBPaths, concatBPath, (percent) => {
+        if (percent >= lastLoggedPercentB + 10) {
+          log(`  Camera B concatenation: ${percent}%`);
+          lastLoggedPercentB = percent;
+        }
+        const stepProgress = percent / 100;
+        const overallProgress = ((completedSteps + stepProgress) / totalSteps) * 100;
+        jobs.set(jobId, { progress: Math.round(overallProgress), status: 'processing' });
+      }, { reencode: false });
+    }
 
     completedSteps++;
     jobs.set(jobId, { progress: Math.round((completedSteps / totalSteps) * 100), status: 'processing' });
-    log(`[Step 2/3] Camera B concatenation complete`);
+    log(`[Step 2/3] Camera B complete`);
 
     // Check durations and pad if necessary
     log(`Checking video durations...`);
