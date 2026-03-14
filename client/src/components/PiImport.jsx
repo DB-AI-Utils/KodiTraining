@@ -295,7 +295,7 @@ function PiImport({ onImportComplete, resetKey }) {
                 <input
                   type="text"
                   className="pi-config-input"
-                  placeholder="http://192.168.1.50:8084"
+                  placeholder="http://192.168.1.50:8085"
                   value={urlInput}
                   onChange={e => setUrlInput(e.target.value)}
                   onKeyDown={e => e.key === 'Enter' && handleConnect()}
