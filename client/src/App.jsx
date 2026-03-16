@@ -2,7 +2,8 @@ import { useState, useEffect, useRef } from 'react'
 import './App.css'
 import DropZone from './components/DropZone'
 import ConfigPanel from './components/ConfigPanel'
-import { setOrder, startProcess, getStatus, getDownloadUrl, reset } from './api.js'
+import PiImport from './components/PiImport'
+import { setOrder, startProcess, getStatus, getDownloadUrl, cleanAll } from './api.js'
 
 function App() {
   const [progress, setProgress] = useState(0)
@@ -22,6 +23,9 @@ function App() {
   const [jobId, setJobId] = useState(null)
   const [status, setStatus] = useState('idle')
   const [error, setError] = useState(null)
+  const [cleanAllKey, setCleanAllKey] = useState(0)
+  const [isCleaning, setIsCleaning] = useState(false)
+  const [showCleanConfirm, setShowCleanConfirm] = useState(false)
 
   // Ref for polling interval
   const pollingIntervalRef = useRef(null)
@@ -50,28 +54,34 @@ function App() {
     }
   }
 
-  const handleReset = async () => {
+  const handleCleanAll = async () => {
+    setShowCleanConfirm(false)
     try {
-      // Call backend reset endpoint
-      await reset()
+      setIsCleaning(true)
+      setError(null)
+      const result = await cleanAll()
 
-      // Reset all frontend state
       setFilesA([])
       setFilesB([])
       setProgress(0)
       setDownloadUrl(null)
-      setError(null)
       setStatus('idle')
       setIsProcessing(false)
       setJobId(null)
+      setCleanAllKey(prev => prev + 1)
 
-      // Clear polling interval if running
       if (pollingIntervalRef.current) {
         clearInterval(pollingIntervalRef.current)
         pollingIntervalRef.current = null
       }
+
+      if (result.piError) {
+        setError(`Local files cleaned. Pi cleanup failed: ${result.piError}`)
+      }
     } catch (err) {
-      setError(err.message || 'Failed to reset')
+      setError(err.message || 'Clean all failed')
+    } finally {
+      setIsCleaning(false)
     }
   }
 
@@ -144,6 +154,14 @@ function App() {
         <h1>KodiTraining - Dual Camera Video Processor</h1>
       </header>
 
+      <PiImport
+        resetKey={cleanAllKey}
+        onImportComplete={(newA, newB) => {
+          setFilesA(prev => [...prev, ...newA])
+          setFilesB(prev => [...prev, ...newB])
+        }}
+      />
+
       <div className="container">
         <div className="column">
           <h2>Camera A (Left)</h2>
@@ -180,11 +198,11 @@ function App() {
           {isProcessing ? 'Processing...' : 'Process Videos'}
         </button>
         <button
-          className="reset-button"
-          onClick={handleReset}
-          disabled={isProcessing}
+          className="clean-all-button"
+          onClick={() => setShowCleanConfirm(true)}
+          disabled={isProcessing || isCleaning}
         >
-          Reset
+          {isCleaning ? 'Cleaning...' : 'Clean All'}
         </button>
       </div>
 
@@ -215,6 +233,23 @@ function App() {
           >
             Download Processed Video
           </a>
+        </div>
+      )}
+
+      {showCleanConfirm && (
+        <div className="modal-overlay" onClick={() => setShowCleanConfirm(false)}>
+          <div className="modal" onClick={e => e.stopPropagation()}>
+            <h3>Clean All</h3>
+            <p>This will delete all local uploads, output files, and recordings on the Pi. Are you sure?</p>
+            <div className="modal-actions">
+              <button className="modal-cancel" onClick={() => setShowCleanConfirm(false)}>
+                Cancel
+              </button>
+              <button className="modal-confirm" onClick={handleCleanAll}>
+                Yes, Clean All
+              </button>
+            </div>
+          </div>
         </div>
       )}
     </div>

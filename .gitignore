@@ -4,3 +4,4 @@ output/
 thumbnails/
 .DS_Store
 *.log
+pi-config.json
