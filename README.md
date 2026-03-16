@@ -49,9 +49,13 @@ client/          # React frontend (Vite, port 5173)
   src/components # DropZone, ConfigPanel
 ```
 
+## Companion App: kodi-pi
+
+[kodi-pi](https://github.com/DB-AI-Utils/kodi-pi) is a Raspberry Pi recording service that captures RTSP streams from two Xiaomi C400 cameras via go2rtc. It provides a mobile-friendly UI for start/stop recording and serves recorded files over HTTP. KodiTraining can import recordings directly from kodi-pi via the PiImport panel.
+
 ## Notes
 
 - Designed for Xiaomi C400 cameras (handles variable frame rate)
 - Videos are combined 50/50 horizontally, audio merged from both
 - All processing happens locally - no cloud upload
-- Reset button clears all uploaded files
+- "Clean All" clears local files and recordings on the Pi
