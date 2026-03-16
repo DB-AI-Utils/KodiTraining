@@ -3,7 +3,7 @@ import './App.css'
 import DropZone from './components/DropZone'
 import ConfigPanel from './components/ConfigPanel'
 import PiImport from './components/PiImport'
-import { setOrder, startProcess, getStatus, getDownloadUrl, reset, cleanAll } from './api.js'
+import { setOrder, startProcess, getStatus, getDownloadUrl, cleanAll } from './api.js'
 
 function App() {
   const [progress, setProgress] = useState(0)
@@ -25,6 +25,7 @@ function App() {
   const [error, setError] = useState(null)
   const [cleanAllKey, setCleanAllKey] = useState(0)
   const [isCleaning, setIsCleaning] = useState(false)
+  const [showCleanConfirm, setShowCleanConfirm] = useState(false)
 
   // Ref for polling interval
   const pollingIntervalRef = useRef(null)
@@ -53,32 +54,8 @@ function App() {
     }
   }
 
-  const handleReset = async () => {
-    try {
-      // Call backend reset endpoint
-      await reset()
-
-      // Reset all frontend state
-      setFilesA([])
-      setFilesB([])
-      setProgress(0)
-      setDownloadUrl(null)
-      setError(null)
-      setStatus('idle')
-      setIsProcessing(false)
-      setJobId(null)
-
-      // Clear polling interval if running
-      if (pollingIntervalRef.current) {
-        clearInterval(pollingIntervalRef.current)
-        pollingIntervalRef.current = null
-      }
-    } catch (err) {
-      setError(err.message || 'Failed to reset')
-    }
-  }
-
   const handleCleanAll = async () => {
+    setShowCleanConfirm(false)
     try {
       setIsCleaning(true)
       setError(null)
@@ -221,11 +198,11 @@ function App() {
           {isProcessing ? 'Processing...' : 'Process Videos'}
         </button>
         <button
-          className="reset-button"
-          onClick={handleReset}
-          disabled={isProcessing}
+          className="clean-all-button"
+          onClick={() => setShowCleanConfirm(true)}
+          disabled={isProcessing || isCleaning}
         >
-          Reset
+          {isCleaning ? 'Cleaning...' : 'Clean All'}
         </button>
       </div>
 
@@ -256,13 +233,23 @@ function App() {
           >
             Download Processed Video
           </a>
-          <button
-            className="clean-all-button"
-            onClick={handleCleanAll}
-            disabled={isCleaning}
-          >
-            {isCleaning ? 'Cleaning...' : 'Clean All'}
-          </button>
+        </div>
+      )}
+
+      {showCleanConfirm && (
+        <div className="modal-overlay" onClick={() => setShowCleanConfirm(false)}>
+          <div className="modal" onClick={e => e.stopPropagation()}>
+            <h3>Clean All</h3>
+            <p>This will delete all local uploads, output files, and recordings on the Pi. Are you sure?</p>
+            <div className="modal-actions">
+              <button className="modal-cancel" onClick={() => setShowCleanConfirm(false)}>
+                Cancel
+              </button>
+              <button className="modal-confirm" onClick={handleCleanAll}>
+                Yes, Clean All
+              </button>
+            </div>
+          </div>
         </div>
       )}
     </div>

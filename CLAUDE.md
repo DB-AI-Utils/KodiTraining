@@ -6,6 +6,12 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 KodiTraining is a local web application that combines dual-camera dog training videos side-by-side. It processes video segments from two cameras (Xiaomi C400), combines them horizontally, concatenates all pairs, and compresses the result for download.
 
+This is part of a two-app ecosystem:
+- **KodiTraining** (this repo) — video processing & combination UI, runs on a Mac/desktop
+- **kodi-pi** (`../kodi-pi`) — Raspberry Pi recording service that captures RTSP streams from Xiaomi cameras via go2rtc
+
+KodiTraining can import recordings directly from kodi-pi via the PiImport panel.
+
 ## Development Commands
 
 ```bash
@@ -38,7 +44,7 @@ cd client && npm run lint
 │  │  Camera A Zone  │     │  Camera B Zone  │                │
 │  │  (DropZone.jsx) │     │  (DropZone.jsx) │                │
 │  └─────────────────┘     └─────────────────┘                │
-│  ConfigPanel.jsx  |  App.jsx (state, polling)               │
+│  PiImport.jsx | ConfigPanel.jsx | App.jsx (state, polling)  │
 │  api.js (fetch wrappers)                                    │
 └──────────────────────────┬──────────────────────────────────┘
                            │ Vite proxy → localhost:3001
@@ -55,9 +61,27 @@ cd client && npm run lint
 │    GET    /api/status/:jobId  → returns progress %           │
 │    GET    /api/download/:jobId→ serves final.mp4             │
 │    POST   /reset              → clears all files             │
+│    POST   /api/clean-all      → clears local + Pi recordings │
+│                                                              │
+│  Pi Integration Routes:                                      │
+│    GET/PUT /api/pi/config     → get/set kodi-pi URL          │
+│    GET    /api/pi/status      → proxy kodi-pi health check   │
+│    GET    /api/pi/recordings  → list Pi recordings (sessions)│
+│    POST   /api/pi/import      → download files from Pi       │
+│    GET    /api/pi/import-status/:jobId → import progress     │
 │                                                              │
 │  Services:                                                   │
 │    ffmpeg.js → combinePair, concatenateVideos, compressVideo │
+└──────────────────────┬──────────────────────────────────────┘
+                       │ HTTP proxy (configured URL)
+                       ▼
+┌─────────────────────────────────────────────────────────────┐
+│            kodi-pi (Raspberry Pi, port 8085)                │
+│            ../kodi-pi — separate repository                 │
+│                                                              │
+│  go2rtc service → Xiaomi C400 RTSP streams                  │
+│  Express API → start/stop recording, list/serve files       │
+│  Recordings stored as camera_[ab]_TIMESTAMP.mp4             │
 └─────────────────────────────────────────────────────────────┘
 ```
 
@@ -97,15 +121,21 @@ Thumbnails are cropped to just the timestamp area (top-left 700x70 pixels) to he
 
 ### Configuration Defaults
 - Concatenate First: true (use concatenate-first mode)
-- CRF: 28 (range 18-35, lower = better quality)
-- Preset: superfast (x264 presets from ultrafast to veryslow)
+- CRF: 35 (range 18-35, lower = better quality)
+- Preset: slower (x264 presets from ultrafast to veryslow)
 - Max Width: null (original width by default)
 - Audio Bitrate: 96k
+
+### Pi Import
+- PiImport panel at the top of the UI connects to kodi-pi to browse and import recordings
+- Pi URL stored in `pi-config.json` (persisted across restarts)
+- Recordings grouped into sessions by 10-minute timestamp gaps
+- Import downloads selected files from Pi to `uploads/a` and `uploads/b`
+- "Clean All" button deletes local files AND recordings on the Pi (with confirmation modal)
 
 ### State Management
 - Frontend uses React useState with polling for job status
 - Backend stores job progress in-memory Map (no persistence)
-- `/reset` clears uploads/a, uploads/b, output directories
 
 ## File Structure
 
@@ -115,7 +145,8 @@ server/
 ├── routes/
 │   ├── upload.js       # File upload, delete, thumbnail
 │   ├── process.js      # Order, process, status, download
-│   └── reset.js        # Clear all directories
+│   ├── clean.js        # Clean all (local files + Pi recordings)
+│   └── pi.js           # Pi integration (proxy, import, config)
 └── services/
     └── ffmpeg.js       # combinePair, concatenateVideos, compressVideo
 
@@ -125,7 +156,10 @@ client/src/
 ├── api.js              # Fetch wrappers for all endpoints
 └── components/
     ├── DropZone.jsx    # Upload zone, file list, drag-reorder
-    └── ConfigPanel.jsx # CRF slider, preset/width/audio selects
+    ├── ConfigPanel.jsx # CRF slider, preset/width/audio selects
+    └── PiImport.jsx    # Browse & import recordings from kodi-pi
+
+pi-config.json          # Persisted kodi-pi URL (default: raspberrypi.local:8085)
 ```
 
 ## Temporary Directories (gitignored)
@@ -139,3 +173,14 @@ client/src/
 
 - Node.js
 - FFmpeg installed and available in PATH (`brew install ffmpeg` on macOS)
+
+## Companion App: kodi-pi
+
+The recording service lives at `../kodi-pi` (separate repo). Key details for context:
+
+- **Stack**: Node.js + Express, go2rtc (Xiaomi RTSP stream handler), Docker Compose
+- **Port**: 8085
+- **What it does**: Captures dual RTSP streams from two Xiaomi C400 cameras via go2rtc, records to MP4 with FFmpeg (`-c copy`, no re-encoding), serves a mobile-friendly UI for start/stop
+- **Recording format**: `camera_[ab]_YYYY-MM-DDTHH-MM-SS.mp4` with JSON sidecar metadata files
+- **API endpoints**: `/api/status`, `/api/record/start`, `/api/record/stop`, `/api/recordings` (list/download/delete)
+- **Deployment**: Docker Compose with go2rtc + kodi-pi containers, host networking, volume-mounted recordings dir
