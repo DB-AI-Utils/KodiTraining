@@ -5,3 +5,4 @@ thumbnails/
 .DS_Store
 *.log
 pi-config.json
+aws-config.json

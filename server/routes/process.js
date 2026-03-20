@@ -65,11 +65,11 @@ router.post('/order', (req, res) => {
 
 /**
  * POST /process - Start FFmpeg processing pipeline
- * Body: { config: { crf, preset, maxWidth, audioBitrate, concatenateFirst } }
+ * Body: { config: { crf, preset, maxWidth, audioBitrate, concatenateFirst }, cloud: boolean }
  */
 router.post('/process', async (req, res) => {
   try {
-    const { config = {} } = req.body;
+    const { config = {}, cloud = false } = req.body;
     const { concatenateFirst = false } = config;
 
     // Validate that we have an order set
@@ -89,25 +89,41 @@ router.post('/process', async (req, res) => {
     // Generate job ID
     const jobId = uuidv4();
 
-    // Initialize job status
-    jobs.set(jobId, {
-      progress: 0,
-      status: 'processing'
-    });
-
-    // Return job ID immediately
-    res.json({ jobId });
-
-    // Start async processing based on mode (don't await)
-    const processFn = concatenateFirst ? processVideosConcatenateFirst : processVideos;
-    processFn(jobId, videoOrder, config).catch(error => {
-      console.error(`Job ${jobId} failed:`, error);
+    if (cloud) {
       jobs.set(jobId, {
         progress: 0,
-        status: 'error',
-        error: error.message
+        status: 'uploading',
+        cloud: true,
+        phase: 'Uploading to cloud...'
       });
-    });
+      res.json({ jobId });
+
+      processCloud(jobId, videoOrder, config).catch(error => {
+        console.error(`Cloud job ${jobId} failed:`, error);
+        jobs.set(jobId, {
+          progress: 0,
+          status: 'error',
+          error: error.message,
+          cloud: true
+        });
+      });
+    } else {
+      jobs.set(jobId, {
+        progress: 0,
+        status: 'processing'
+      });
+      res.json({ jobId });
+
+      const processFn = concatenateFirst ? processVideosConcatenateFirst : processVideos;
+      processFn(jobId, videoOrder, config).catch(error => {
+        console.error(`Job ${jobId} failed:`, error);
+        jobs.set(jobId, {
+          progress: 0,
+          status: 'error',
+          error: error.message
+        });
+      });
+    }
 
   } catch (error) {
     console.error('Error starting process:', error);
@@ -450,9 +466,70 @@ async function processVideosConcatenateFirst(jobId, order, config) {
   }
 }
 
+/**
+ * Cloud processing pipeline
+ * Uploads files to S3, starts ECS task, polls for progress, downloads result
+ */
+async function processCloud(jobId, order, config) {
+  const cloud = await import('../services/cloud.js');
+
+  // Phase 1: Upload to S3 (0-15%)
+  log(`[Cloud] Uploading input files for job ${jobId}...`);
+  await cloud.uploadInputFiles(jobId, order);
+  jobs.set(jobId, { progress: 12, status: 'uploading', cloud: true, phase: 'Uploading to cloud...' });
+
+  // Start ECS task
+  log(`[Cloud] Starting ECS task for job ${jobId}...`);
+  const taskArn = await cloud.runTask(jobId, config);
+  log(`[Cloud] ECS task started: ${taskArn}`);
+  jobs.set(jobId, { progress: 15, status: 'cloud-processing', cloud: true, taskArn, phase: 'Processing in cloud...' });
+
+  // Phase 2: Poll for cloud progress (15-85%)
+  while (true) {
+    await new Promise(r => setTimeout(r, 5000));
+
+    const progress = await cloud.getProgress(jobId);
+
+    if (progress.phase === 'done') {
+      break;
+    }
+
+    if (progress.phase === 'error' || progress.error) {
+      throw new Error(progress.error || 'Cloud processing failed');
+    }
+
+    // Check ECS task status in case container crashed without writing error
+    const taskStatus = await cloud.checkTaskStatus(taskArn);
+    if (taskStatus.status === 'STOPPED') {
+      if (progress.phase !== 'done') {
+        throw new Error(taskStatus.stoppedReason || `Container stopped with exit code ${taskStatus.exitCode}`);
+      }
+      break;
+    }
+
+    // Map container progress (0-100) to overall (15-85)
+    const mappedProgress = 15 + (progress.percent / 100) * 70;
+    jobs.set(jobId, {
+      progress: Math.round(mappedProgress),
+      status: 'cloud-processing',
+      cloud: true,
+      taskArn,
+      phase: 'Processing in cloud...'
+    });
+  }
+
+  // Phase 3: Download result (85-100%)
+  log(`[Cloud] Downloading result for job ${jobId}...`);
+  jobs.set(jobId, { progress: 85, status: 'downloading', cloud: true, phase: 'Downloading result...' });
+  await cloud.downloadResult(jobId);
+
+  jobs.set(jobId, { progress: 100, status: 'done', cloud: true });
+  log(`[Cloud] Job ${jobId} completed successfully`);
+}
+
 export function hasActiveJobs() {
   for (const job of jobs.values()) {
-    if (job.status === 'processing') return true;
+    if (job.status === 'processing' || job.status === 'uploading' || job.status === 'cloud-processing' || job.status === 'downloading') return true;
   }
   return false;
 }

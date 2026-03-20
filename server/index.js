@@ -5,6 +5,7 @@ import resetRoutes from './routes/reset.js';
 import processRoutes from './routes/process.js';
 import piRoutes from './routes/pi.js';
 import cleanRoutes from './routes/clean.js';
+import awsConfigRoutes from './routes/aws-config.js';
 
 const app = express();
 const PORT = 3001;
@@ -20,6 +21,7 @@ app.use('/upload', uploadRoutes);
 app.use('/reset', resetRoutes);
 app.use('/api', processRoutes);
 app.use('/api/pi', piRoutes);
+app.use('/api/aws', awsConfigRoutes);
 app.use('/api/clean-all', cleanRoutes);
 
 app.listen(PORT, () => {
