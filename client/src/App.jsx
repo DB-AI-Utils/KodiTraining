@@ -26,6 +26,8 @@ function App() {
   const [cleanAllKey, setCleanAllKey] = useState(0)
   const [isCleaning, setIsCleaning] = useState(false)
   const [showCleanConfirm, setShowCleanConfirm] = useState(false)
+  const [useCloud, setUseCloud] = useState(false)
+  const [phase, setPhase] = useState(null)
 
   // Ref for polling interval
   const pollingIntervalRef = useRef(null)
@@ -38,6 +40,7 @@ function App() {
       setDownloadUrl(null)
       setError(null)
       setStatus('processing')
+      setPhase(useCloud ? 'Uploading to cloud...' : null)
 
       // Set file order
       const orderA = filesA.map(f => f.id)
@@ -45,7 +48,7 @@ function App() {
       await setOrder(orderA, orderB)
 
       // Start processing
-      const response = await startProcess({ config })
+      const response = await startProcess({ config, cloud: useCloud })
       setJobId(response.jobId)
     } catch (err) {
       setError(err.message || 'Failed to start processing')
@@ -68,6 +71,7 @@ function App() {
       setStatus('idle')
       setIsProcessing(false)
       setJobId(null)
+      setPhase(null)
       setCleanAllKey(prev => prev + 1)
 
       if (pollingIntervalRef.current) {
@@ -95,9 +99,12 @@ function App() {
       try {
         const statusResponse = await getStatus(jobId)
 
-        // Update progress
+        // Update progress and phase
         if (statusResponse.progress !== undefined) {
           setProgress(statusResponse.progress)
+        }
+        if (statusResponse.phase) {
+          setPhase(statusResponse.phase)
         }
 
         // Check status
@@ -182,7 +189,7 @@ function App() {
         </div>
       </div>
 
-      <ConfigPanel config={config} onChange={setConfig} />
+      <ConfigPanel config={config} onChange={setConfig} cloud={useCloud} onCloudChange={setUseCloud} />
 
       <div className="controls">
         <button
@@ -214,6 +221,7 @@ function App() {
 
       {progress > 0 && (
         <div className="progress-container">
+          {phase && <p className="progress-text" style={{ marginBottom: '4px' }}>{phase}</p>}
           <div className="progress-bar">
             <div
               className="progress-fill"
