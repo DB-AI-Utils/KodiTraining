@@ -91,7 +91,7 @@ Resources:
         - Name: kodi-training
           Image: !Sub '${AWS::AccountId}.dkr.ecr.${AWS::Region}.amazonaws.com/${ECRRepository}:latest'
           Essential: true
-          StopTimeout: 1800
+          StopTimeout: 120
           LogConfiguration:
             LogDriver: awslogs
             Options:

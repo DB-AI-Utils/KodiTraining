@@ -26,7 +26,7 @@ function App() {
   const [cleanAllKey, setCleanAllKey] = useState(0)
   const [isCleaning, setIsCleaning] = useState(false)
   const [showCleanConfirm, setShowCleanConfirm] = useState(false)
-  const [useCloud, setUseCloud] = useState(false)
+  const [useCloud, setUseCloud] = useState(true)
   const [phase, setPhase] = useState(null)
 
   // Ref for polling interval

@@ -60,7 +60,7 @@ function ConfigPanel({ config, onChange, cloud, onCloudChange }) {
 
         <div className="config-item">
           <label
-            className="checkbox-label"
+            className="checkbox-label concatenate-first-label"
             title={!awsConfigured ? 'Configure AWS first (run infra/deploy-image.sh)' : 'Process video in AWS cloud instead of locally'}
           >
             <input
