@@ -1,0 +1,14 @@
+services:
+  kodi-training:
+    build:
+      context: .
+      dockerfile: Dockerfile.app
+    ports:
+      - "8086:8086"
+    volumes:
+      - ./uploads:/app/uploads
+      - ./output:/app/output
+      - ./thumbnails:/app/thumbnails
+    env_file:
+      - .env
+    restart: unless-stopped
