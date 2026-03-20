@@ -6,3 +6,4 @@ thumbnails/
 *.log
 pi-config.json
 aws-config.json
+.env
