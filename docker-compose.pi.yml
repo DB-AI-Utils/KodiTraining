@@ -1,5 +1,6 @@
 services:
   kodi-training:
+    container_name: kodi-training
     build:
       context: .
       dockerfile: Dockerfile.app
