@@ -10,6 +10,8 @@ services:
       - ./uploads:/app/uploads
       - ./output:/app/output
       - ./thumbnails:/app/thumbnails
+      - ./aws-config.json:/app/aws-config.json
+      - ./pi-config.json:/app/pi-config.json
     env_file:
       - .env
     restart: unless-stopped
