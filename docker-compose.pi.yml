@@ -1,4 +1,17 @@
 services:
+  telegram-bot-api:
+    image: aiogram/telegram-bot-api:latest
+    command: >
+      --api-id=${TELEGRAM_API_ID}
+      --api-hash=${TELEGRAM_API_HASH}
+      --local
+      --http-port=8081
+      --dir=/data
+    volumes:
+      - telegram-bot-api-data:/data
+      - ./output:/output:ro
+    restart: unless-stopped
+
   kodi-training:
     container_name: kodi-training
     build:
@@ -14,4 +27,11 @@ services:
       - ./pi-config.json:/app/pi-config.json
     env_file:
       - .env
+    environment:
+      - TELEGRAM_API_URL=http://telegram-bot-api:8081
+    depends_on:
+      - telegram-bot-api
     restart: unless-stopped
+
+volumes:
+  telegram-bot-api-data:

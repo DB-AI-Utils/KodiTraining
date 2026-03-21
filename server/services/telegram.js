@@ -1,7 +1,9 @@
 import TelegramBot from 'node-telegram-bot-api';
+import { createReadStream } from 'fs';
 
 const BOT_TOKEN = process.env.TELEGRAM_BOT_TOKEN;
 const CHAT_ID = process.env.TELEGRAM_CHAT_ID;
+const API_URL = process.env.TELEGRAM_API_URL;
 
 let bot = null;
 let callbackHandler = null;
@@ -10,10 +12,20 @@ export function isConfigured() {
   return !!(BOT_TOKEN && CHAT_ID);
 }
 
+export function isLocalApiConfigured() {
+  return !!(API_URL && isConfigured());
+}
+
 export function init() {
   if (!isConfigured()) return;
 
-  bot = new TelegramBot(BOT_TOKEN, { polling: true });
+  const opts = { polling: true };
+  if (API_URL) {
+    opts.baseApiUrl = API_URL;
+    console.log(`[telegram] Using local Bot API at ${API_URL}`);
+  }
+
+  bot = new TelegramBot(BOT_TOKEN, opts);
 
   bot.on('callback_query', async (query) => {
     try {
@@ -154,4 +166,14 @@ export async function editMessage(messageId, text, replyMarkup) {
 export async function sendMessage(text) {
   if (!bot) return null;
   return bot.sendMessage(CHAT_ID, text, { parse_mode: 'HTML' });
+}
+
+export async function sendVideo(filePath, caption) {
+  if (!bot) throw new Error('Bot not initialized');
+
+  return bot.sendVideo(CHAT_ID, createReadStream(filePath), {
+    caption,
+    parse_mode: 'HTML',
+    supports_streaming: true,
+  });
 }
