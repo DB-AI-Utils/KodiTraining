@@ -527,6 +527,12 @@ async function processCloud(jobId, order, config) {
   log(`[Cloud] Job ${jobId} completed successfully`);
 }
 
+export { jobs, processCloud };
+
+export function setVideoOrder(order) {
+  videoOrder = order;
+}
+
 export function hasActiveJobs() {
   for (const job of jobs.values()) {
     if (job.status === 'processing' || job.status === 'uploading' || job.status === 'cloud-processing' || job.status === 'downloading') return true;

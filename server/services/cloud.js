@@ -5,6 +5,7 @@ import {
   ListObjectsV2Command,
   DeleteObjectsCommand,
 } from '@aws-sdk/client-s3';
+import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
 import { ECSClient, RunTaskCommand, DescribeTasksCommand } from '@aws-sdk/client-ecs';
 import { EC2Client, DescribeSubnetsCommand } from '@aws-sdk/client-ec2';
 import { promises as fs } from 'fs';
@@ -237,6 +238,19 @@ export async function deleteJobFiles(jobId) {
       Objects: listRes.Contents.map(obj => ({ Key: obj.Key })),
     },
   }));
+}
+
+export async function getPresignedDownloadUrl(jobId, expiresIn = 3600) {
+  const config = await getConfig();
+  if (!config) throw new Error('AWS not configured');
+
+  const s3 = getS3Client(config);
+  const command = new GetObjectCommand({
+    Bucket: config.bucket,
+    Key: `jobs/${jobId}/output/final.mp4`,
+  });
+
+  return getSignedUrl(s3, command, { expiresIn });
 }
 
 export async function deleteAllJobs() {
