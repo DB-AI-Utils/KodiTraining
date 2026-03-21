@@ -249,7 +249,10 @@ export function groupRecordingsIntoSessions(recordings) {
     }
 
     currentSession.recordings.push(rec);
-    currentSession.endTime = rec.timestamp;
+    const recEndTime = rec.duration
+      ? new Date(recTime + rec.duration * 1000).toISOString()
+      : rec.timestamp;
+    if (recEndTime > currentSession.endTime) currentSession.endTime = recEndTime;
     currentSession._lastTime = recTime;
   }
 
