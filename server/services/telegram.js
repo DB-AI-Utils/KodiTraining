@@ -45,7 +45,7 @@ export async function sendSessionPrompt(sessionInfo) {
   const { date, timeRange, cameraA, cameraB } = sessionInfo;
 
   const text = [
-    `🎬 *Training Session Recorded*`,
+    `🎬 <b>Training Session Recorded</b>`,
     ``,
     `📅 ${date}, ${timeRange}`,
     `📹 Camera A: ${cameraA.segments} segments, ${cameraA.duration}, ${cameraA.size}`,
@@ -55,7 +55,7 @@ export async function sendSessionPrompt(sessionInfo) {
   ].join('\n');
 
   const msg = await bot.sendMessage(CHAT_ID, text, {
-    parse_mode: 'Markdown',
+    parse_mode: 'HTML',
     reply_markup: {
       inline_keyboard: [[
         { text: '✅ Yes', callback_data: `approve:${sessionInfo.sessionId}` },
@@ -74,7 +74,7 @@ export async function sendProgress(messageId, text) {
     await bot.editMessageText(text, {
       chat_id: CHAT_ID,
       message_id: messageId,
-      parse_mode: 'Markdown',
+      parse_mode: 'HTML',
     });
   } catch {
     // message might not have changed
@@ -85,7 +85,7 @@ export async function sendCompletion(messageId, { duration, size, downloadUrl, s
   if (!bot) return;
 
   const text = [
-    `✅ *Processing Complete*`,
+    `✅ <b>Processing Complete</b>`,
     ``,
     `⏱ Duration: ${duration}`,
     `💾 Size: ${size}`,
@@ -97,7 +97,7 @@ export async function sendCompletion(messageId, { duration, size, downloadUrl, s
   await bot.editMessageText(text, {
     chat_id: CHAT_ID,
     message_id: messageId,
-    parse_mode: 'Markdown',
+    parse_mode: 'HTML',
     reply_markup: {
       inline_keyboard: [[
         { text: '🗑 Delete source files', callback_data: `delete:${sessionId}` },
@@ -111,7 +111,7 @@ export async function sendError(messageId, errorMessage) {
   if (!bot) return;
 
   const text = [
-    `❌ *Processing Failed*`,
+    `❌ <b>Processing Failed</b>`,
     ``,
     errorMessage,
     ``,
@@ -123,7 +123,7 @@ export async function sendError(messageId, errorMessage) {
       await bot.editMessageText(text, {
         chat_id: CHAT_ID,
         message_id: messageId,
-        parse_mode: 'Markdown',
+        parse_mode: 'HTML',
       });
       return;
     } catch {
@@ -131,7 +131,7 @@ export async function sendError(messageId, errorMessage) {
     }
   }
 
-  await bot.sendMessage(CHAT_ID, text, { parse_mode: 'Markdown' });
+  await bot.sendMessage(CHAT_ID, text, { parse_mode: 'HTML' });
 }
 
 export async function editMessage(messageId, text, replyMarkup) {
@@ -140,7 +140,7 @@ export async function editMessage(messageId, text, replyMarkup) {
   const opts = {
     chat_id: CHAT_ID,
     message_id: messageId,
-    parse_mode: 'Markdown',
+    parse_mode: 'HTML',
   };
   if (replyMarkup) opts.reply_markup = replyMarkup;
 
@@ -153,5 +153,5 @@ export async function editMessage(messageId, text, replyMarkup) {
 
 export async function sendMessage(text) {
   if (!bot) return null;
-  return bot.sendMessage(CHAT_ID, text, { parse_mode: 'Markdown' });
+  return bot.sendMessage(CHAT_ID, text, { parse_mode: 'HTML' });
 }

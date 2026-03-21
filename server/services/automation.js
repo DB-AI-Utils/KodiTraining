@@ -145,7 +145,7 @@ export async function handleApproval(sessionId) {
   session.status = 'importing';
 
   try {
-    await telegram.sendProgress(session.telegramMessageId, '⏳ *Importing recordings from Pi...*');
+    await telegram.sendProgress(session.telegramMessageId, '⏳ <b>Importing recordings from Pi...</b>');
 
     const importJobId = uuidv4();
     await processImport(importJobId, session.filenames);
@@ -164,7 +164,7 @@ export async function handleApproval(sessionId) {
     setVideoOrder({ a: orderA, b: orderB });
 
     session.status = 'processing';
-    await telegram.sendProgress(session.telegramMessageId, '⏳ *Processing in cloud...*');
+    await telegram.sendProgress(session.telegramMessageId, '⏳ <b>Processing in cloud...</b>');
 
     const processJobId = uuidv4();
     session.processJobId = processJobId;
@@ -234,14 +234,14 @@ export async function handleRejection(sessionId) {
   if (!session || session.status !== 'pending_approval') return;
 
   session.status = 'rejected';
-  await telegram.editMessage(session.telegramMessageId, '❌ *Skipped* — not processing this session.');
+  await telegram.editMessage(session.telegramMessageId, '❌ <b>Skipped</b> — not processing this session.');
 }
 
 export async function handleDelete(sessionId) {
   const session = sessions.get(sessionId);
   if (!session) return;
 
-  await telegram.editMessage(session.telegramMessageId, '🗑 *Deleting source files...*');
+  await telegram.editMessage(session.telegramMessageId, '🗑 <b>Deleting source files...</b>');
 
   let piDeleted = 0;
   for (const filename of session.filenames) {
@@ -270,7 +270,7 @@ export async function handleDelete(sessionId) {
 
   await telegram.editMessage(
     session.telegramMessageId,
-    `🗑 *Source files deleted*\n\nRemoved ${piDeleted} files from Pi, ${localDeleted} imported files.`
+    `🗑 <b>Source files deleted</b>\n\nRemoved ${piDeleted} files from Pi, ${localDeleted} imported files.`
   );
 }
 
@@ -284,7 +284,7 @@ export async function handleNewLink(sessionId) {
   } catch (err) {
     await telegram.editMessage(
       session.telegramMessageId,
-      `❌ *Failed to generate new link:* ${err.message}`
+      `❌ <b>Failed to generate new link:</b> ${err.message}`
     );
     return;
   }
