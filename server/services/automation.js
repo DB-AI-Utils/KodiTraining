@@ -112,6 +112,8 @@ export async function handleRecordingStopped(payload) {
     recordings: session.recordings,
     filenames: session.recordings.map(r => r.filename),
     importedFiles: { a: [], b: [] },
+    date: formatDate(session.startTime),
+    timeRange: `${formatTime(session.startTime)} – ${formatTime(session.endTime)}`,
   };
   sessions.set(sessionId, sessionState);
 
@@ -243,7 +245,7 @@ export async function handleApproval(sessionId) {
     if (telegram.isLocalApiConfigured()) {
       try {
         await telegram.sendProgress(session.telegramMessageId, '⏳ <b>Sending video to Telegram...</b>');
-        const caption = `🎬 <b>Training Session</b>\n⏱ ${duration} | 💾 ${size}`;
+        const caption = `🎬 <b>Training Session</b>\n📅 ${session.date}, ${session.timeRange}\n⏱ ${duration} | 💾 ${size}`;
 
         const SEND_TIMEOUT = 30 * 60 * 1000;
         const sendPromise = telegram.sendVideo(FINAL_PATH, caption);
