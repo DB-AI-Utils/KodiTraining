@@ -3,7 +3,7 @@ import { promises as fs } from 'fs';
 import { join, dirname } from 'path';
 import { fileURLToPath } from 'url';
 import * as recorder from './recorder.js';
-import { groupRecordingsIntoSessions, processImport, importJobs } from '../routes/recording.js';
+import { groupRecordingsIntoSessions, processImport, importJobs } from './import.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const FINAL_PATH = join(__dirname, '../../output/final.mp4');
@@ -155,7 +155,7 @@ export async function handleApproval(sessionId) {
   session.status = 'importing';
 
   try {
-    await telegram.sendProgress(session.telegramMessageId, '⏳ <b>Importing recordings from Pi...</b>');
+    await telegram.sendProgress(session.telegramMessageId, '⏳ <b>Importing recordings...</b>');
 
     const importJobId = uuidv4();
     await processImport(importJobId, session.filenames);

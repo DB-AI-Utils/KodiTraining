@@ -1,20 +1,15 @@
 import { Router } from 'express';
 import { v4 as uuidv4 } from 'uuid';
-import { promises as fsPromises } from 'fs';
 import fs from 'fs';
 import path from 'path';
-import { fileURLToPath } from 'url';
-import { dirname, join } from 'path';
 import * as recorder from '../services/recorder.js';
+import { RECORDINGS_DIR } from '../services/recorder.js';
 import * as autoRecordService from '../services/auto-record.js';
-import { getVideoDuration } from '../services/ffmpeg.js';
+import { processImport, importJobs, groupRecordingsIntoSessions, hasActiveImports } from '../services/import.js';
 
-const __dirname = dirname(fileURLToPath(import.meta.url));
 const router = Router();
 
-const RECORDINGS_DIR = path.resolve(process.env.RECORDINGS_DIR || './recordings');
 const FILENAME_PATTERN = /^camera_[ab]_\d{4}-\d{2}-\d{2}T\d{2}-\d{2}-\d{2}\.mp4$/;
-const UPLOADS_BASE = join(__dirname, '../../uploads');
 
 const GO2RTC_API = process.env.GO2RTC_API || 'http://localhost:1984';
 const CAMERA_WAIT_TIMEOUT_MS = 30_000;
@@ -205,124 +200,5 @@ router.get('/import-status/:jobId', (req, res) => {
 
   res.json(job);
 });
-
-async function processImport(jobId, filenames) {
-  const filesA = [];
-  const filesB = [];
-  const copiedPaths = [];
-
-  await fsPromises.mkdir(join(UPLOADS_BASE, 'a'), { recursive: true });
-  await fsPromises.mkdir(join(UPLOADS_BASE, 'b'), { recursive: true });
-
-  try {
-    for (let i = 0; i < filenames.length; i++) {
-      const filename = filenames[i];
-
-      const camMatch = filename.match(/^camera_([ab])_/);
-      if (!camMatch) {
-        throw new Error(`Cannot determine camera from filename: ${filename}`);
-      }
-      const camera = camMatch[1];
-
-      const srcPath = path.join(RECORDINGS_DIR, filename);
-      const id = uuidv4();
-      const destPath = join(UPLOADS_BASE, camera, `${id}.mp4`);
-
-      await fsPromises.copyFile(srcPath, destPath);
-      copiedPaths.push(destPath);
-
-      let duration = null;
-      try {
-        const d = await getVideoDuration(destPath);
-        if (Number.isFinite(d) && d >= 0) {
-          duration = d;
-        }
-      } catch (err) {
-        console.warn(`Could not get duration for ${filename}: ${err.message}`);
-      }
-
-      const fileObj = {
-        id,
-        filename,
-        camera,
-        path: destPath,
-        duration,
-      };
-
-      if (camera === 'a') {
-        filesA.push(fileObj);
-      } else {
-        filesB.push(fileObj);
-      }
-
-      importJobs.set(jobId, {
-        status: 'processing',
-        progress: Math.round(((i + 1) / filenames.length) * 100),
-      });
-    }
-  } catch (err) {
-    for (const filePath of copiedPaths) {
-      try {
-        await fsPromises.unlink(filePath);
-      } catch {
-        // already gone or inaccessible
-      }
-    }
-    throw err;
-  }
-
-  importJobs.set(jobId, {
-    status: 'complete',
-    progress: 100,
-    filesA,
-    filesB,
-  });
-}
-
-// ── Utilities ──
-
-export function groupRecordingsIntoSessions(recordings) {
-  const sorted = [...recordings].sort((a, b) => a.timestamp.localeCompare(b.timestamp));
-
-  const SESSION_GAP_MS = 10 * 60 * 1000;
-  const sessions = [];
-  let currentSession = null;
-
-  for (const rec of sorted) {
-    const recTime = new Date(rec.timestamp).getTime();
-
-    if (!currentSession || recTime - currentSession._lastTime > SESSION_GAP_MS) {
-      currentSession = {
-        startTime: rec.timestamp,
-        endTime: rec.timestamp,
-        recordings: [],
-        _lastTime: recTime,
-      };
-      sessions.push(currentSession);
-    }
-
-    currentSession.recordings.push(rec);
-    const recEndTime = rec.duration
-      ? new Date(recTime + rec.duration * 1000).toISOString()
-      : rec.timestamp;
-    if (recEndTime > currentSession.endTime) currentSession.endTime = recEndTime;
-    currentSession._lastTime = recTime;
-  }
-
-  for (const session of sessions) {
-    delete session._lastTime;
-  }
-
-  return sessions;
-}
-
-export function hasActiveImports() {
-  for (const job of importJobs.values()) {
-    if (job.status === 'processing') return true;
-  }
-  return false;
-}
-
-export { processImport, importJobs };
 
 export default router;

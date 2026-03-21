@@ -8,7 +8,7 @@ const MIN_DISK_SPACE_BYTES = 1024 * 1024 * 1024; // 1 GB
 
 const RTSP_BASE = process.env.RTSP_BASE || 'rtsp://localhost:8554';
 const GO2RTC_API = process.env.GO2RTC_API || 'http://localhost:1984';
-const RECORDINGS_DIR = path.resolve(process.env.RECORDINGS_DIR || './recordings');
+export const RECORDINGS_DIR = path.resolve(process.env.RECORDINGS_DIR || './recordings');
 
 const cameras = new Map(
   VALID_CAMERAS.map(name => [name, { status: 'idle', process: null, startTime: null, outputPath: null }])
@@ -185,6 +185,7 @@ export async function stopAll() {
         const killTimeout = setTimeout(() => {
           console.warn(`[${camera}] ffmpeg did not exit after SIGINT, sending SIGKILL`);
           proc.kill('SIGKILL');
+          resolve();
         }, 5000);
 
         proc.on('exit', () => {

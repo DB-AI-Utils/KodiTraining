@@ -3,7 +3,7 @@ import { join, dirname } from 'path';
 import { fileURLToPath } from 'url';
 import { clearDirectory } from './reset.js';
 import { hasActiveJobs } from './process.js';
-import { hasActiveImports } from './recording.js';
+import { hasActiveImports } from '../services/import.js';
 import * as recorder from '../services/recorder.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
