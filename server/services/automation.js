@@ -254,13 +254,17 @@ export async function handleApproval(sessionId) {
         );
         await Promise.race([sendPromise, timeoutPromise]);
 
-        // Auto-cleanup all files
-        await cleanupSessionFiles(session);
-        sessions.delete(sessionId);
+        // Auto-cleanup local files and S3 (not Pi recordings)
+        await cleanupLocalAndS3(session);
 
         await telegram.editMessage(
           session.telegramMessageId,
-          `✅ <b>Processing Complete</b>\n\n⏱ Duration: ${duration}\n💾 Size: ${size}\n\n🗑 Source files cleaned up automatically.`
+          `✅ <b>Processing Complete</b>\n\n⏱ Duration: ${duration}\n💾 Size: ${size}`,
+          {
+            inline_keyboard: [[
+              { text: '🗑 Delete Pi recordings', callback_data: `delete:${sessionId}` },
+            ]],
+          }
         );
         return;
       } catch (err) {
@@ -303,17 +307,7 @@ export async function handleRejection(sessionId) {
   await telegram.editMessage(session.telegramMessageId, '❌ <b>Skipped</b> — not processing this session.');
 }
 
-async function cleanupSessionFiles(session) {
-  let piDeleted = 0;
-  for (const filename of session.filenames) {
-    try {
-      await piFetch(`/api/recordings/${encodeURIComponent(filename)}`, { method: 'DELETE' });
-      piDeleted++;
-    } catch (err) {
-      console.warn(`[automation] Failed to delete ${filename} from Pi: ${err.message}`);
-    }
-  }
-
+async function cleanupLocalAndS3(session) {
   let localDeleted = 0;
   for (const camera of ['a', 'b']) {
     for (const file of session.importedFiles[camera]) {
@@ -336,8 +330,22 @@ async function cleanupSessionFiles(session) {
     }
   }
 
-  console.log(`[automation] Cleanup: ${piDeleted} Pi files, ${localDeleted} local files, S3 job deleted`);
-  return { piDeleted, localDeleted };
+  console.log(`[automation] Cleanup: ${localDeleted} local files, S3 job deleted`);
+  return { localDeleted };
+}
+
+async function cleanupPiRecordings(session) {
+  let piDeleted = 0;
+  for (const filename of session.filenames) {
+    try {
+      await piFetch(`/api/recordings/${encodeURIComponent(filename)}`, { method: 'DELETE' });
+      piDeleted++;
+    } catch (err) {
+      console.warn(`[automation] Failed to delete ${filename} from Pi: ${err.message}`);
+    }
+  }
+  console.log(`[automation] Deleted ${piDeleted} Pi recordings`);
+  return { piDeleted };
 }
 
 export async function handleDelete(sessionId) {
@@ -346,11 +354,13 @@ export async function handleDelete(sessionId) {
 
   await telegram.editMessage(session.telegramMessageId, '🗑 <b>Deleting source files...</b>');
 
-  const { piDeleted, localDeleted } = await cleanupSessionFiles(session);
+  const { piDeleted } = await cleanupPiRecordings(session);
+  await cleanupLocalAndS3(session);
+  sessions.delete(sessionId);
 
   await telegram.editMessage(
     session.telegramMessageId,
-    `🗑 <b>Source files deleted</b>\n\nRemoved ${piDeleted} files from Pi, ${localDeleted} imported files.`
+    `🗑 <b>Deleted</b> — removed ${piDeleted} recordings from Pi.`
   );
 }
 
