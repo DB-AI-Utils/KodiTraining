@@ -2,8 +2,10 @@ node_modules/
 uploads/
 output/
 thumbnails/
+recordings/
 .DS_Store
 *.log
-pi-config.json
 aws-config.json
+go2rtc.yaml
+auto-record-config.json
 .env
