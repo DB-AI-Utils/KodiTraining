@@ -63,12 +63,15 @@ docker compose -f docker-compose.pi.yml down
 docker compose -f docker-compose.pi.yml up -d --build
 ```
 
-App runs on port 8086. Needs `.env` file with AWS credentials:
+App runs on port 8086. Needs `.env` file:
 ```
 PORT=8086
 AWS_ACCESS_KEY_ID=<key>
 AWS_SECRET_ACCESS_KEY=<secret>
 AWS_REGION=eu-north-1
+TELEGRAM_BOT_TOKEN=<token>       # Optional: enables auto-processing via Telegram
+TELEGRAM_CHAT_ID=<chat-id>       # Required if bot token is set
+MIN_SESSION_DURATION=30           # Minutes, sessions shorter than this are skipped
 ```
 
 ## FFmpeg Processing Modes
@@ -105,6 +108,14 @@ The `combinePair` function in `server/services/ffmpeg.js` applies `-vsync cfr` a
 - S3 lifecycle rule auto-deletes job files after 7 days
 - "Clean All" also purges S3 job files
 
+### Telegram Automation
+When `TELEGRAM_BOT_TOKEN` + `TELEGRAM_CHAT_ID` are set, auto-processing is enabled:
+- kodi-pi fires a webhook to KodiTraining when recording stops
+- If session duration ≥ `MIN_SESSION_DURATION`, Telegram prompt is sent (Yes/No)
+- On approval: auto-imports from Pi → cloud processing → presigned S3 download link (1h)
+- Bot uses polling mode (works behind NAT). Must use a dedicated bot token (not shared with other services)
+- Session state is in-memory — buttons on old messages won't work after container restart
+
 ### Configuration Defaults
 - Process in Cloud: true (when AWS configured)
 - Concatenate First: true (use concatenate-first mode)
@@ -123,10 +134,13 @@ server/
 │   ├── process.js      # Order, process (local + cloud), status, download
 │   ├── clean.js        # Clean all (local + Pi + S3)
 │   ├── pi.js           # Pi integration (proxy, import, config)
+│   ├── webhook.js      # Receives recording-stopped webhook from kodi-pi
 │   └── aws-config.js   # AWS config CRUD
 └── services/
     ├── ffmpeg.js       # combinePair, concatenateVideos, compressVideo
-    └── cloud.js        # S3 upload/download, ECS RunTask, progress polling
+    ├── cloud.js        # S3 upload/download, ECS RunTask, progress polling, presigned URLs
+    ├── telegram.js     # Telegram bot (polling mode), inline keyboards, notifications
+    └── automation.js   # Orchestrates webhook → Telegram → import → cloud → notify
 
 container/
 ├── process.js          # ECS Fargate entrypoint (S3 ↔ FFmpeg pipeline)
@@ -168,4 +182,5 @@ The recording service lives at `../kodi-pi` (separate repo). Key details for con
 - **What it does**: Captures dual RTSP streams from two Xiaomi C400 cameras via go2rtc, records to MP4 with FFmpeg (`-c copy`, no re-encoding), serves a mobile-friendly UI for start/stop
 - **Recording format**: `camera_[ab]_YYYY-MM-DDTHH-MM-SS.mp4` with JSON sidecar metadata files
 - **API endpoints**: `/api/status`, `/api/record/start`, `/api/record/stop`, `/api/recordings` (list/download/delete)
+- **Webhook**: Fires POST to `KODI_TRAINING_URL/api/webhook/recording-stopped` when recording stops (auto or manual)
 - **Deployment**: Docker Compose with go2rtc + kodi-pi containers, host networking, volume-mounted recordings dir
