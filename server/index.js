@@ -1,13 +1,21 @@
 import express from 'express';
 import cors from 'cors';
+import { dirname, join } from 'path';
+import { fileURLToPath } from 'url';
+import { existsSync } from 'fs';
 import uploadRoutes from './routes/upload.js';
 import resetRoutes from './routes/reset.js';
 import processRoutes from './routes/process.js';
 import piRoutes from './routes/pi.js';
 import cleanRoutes from './routes/clean.js';
+import awsConfigRoutes from './routes/aws-config.js';
+import webhookRoutes from './routes/webhook.js';
+import * as telegram from './services/telegram.js';
+import { initCallbackHandler } from './services/automation.js';
 
+const __dirname = dirname(fileURLToPath(import.meta.url));
 const app = express();
-const PORT = 3001;
+const PORT = process.env.PORT || 3001;
 
 app.use(cors());
 app.use(express.json());
@@ -20,7 +28,25 @@ app.use('/upload', uploadRoutes);
 app.use('/reset', resetRoutes);
 app.use('/api', processRoutes);
 app.use('/api/pi', piRoutes);
+app.use('/api/aws', awsConfigRoutes);
 app.use('/api/clean-all', cleanRoutes);
+app.use('/api/webhook', webhookRoutes);
+
+// Initialize Telegram bot + automation if configured
+if (telegram.isConfigured()) {
+  telegram.init();
+  initCallbackHandler();
+  console.log('Telegram automation enabled');
+}
+
+// Serve built client in production
+const clientDist = join(__dirname, '../client/dist');
+if (existsSync(clientDist)) {
+  app.use(express.static(clientDist));
+  app.get('*', (req, res) => {
+    res.sendFile(join(clientDist, 'index.html'));
+  });
+}
 
 app.listen(PORT, () => {
   console.log(`Server running on http://localhost:${PORT}`);

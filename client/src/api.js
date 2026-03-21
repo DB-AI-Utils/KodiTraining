@@ -76,13 +76,13 @@ export async function setOrder(orderA, orderB) {
  * @param {number} config.rightScale - Scale for right video (0-1)
  * @returns {Promise<Object>} Response with job ID
  */
-export async function startProcess(config) {
+export async function startProcess({ config, cloud = false }) {
   const response = await fetch('/api/process', {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
     },
-    body: JSON.stringify(config),
+    body: JSON.stringify({ config, cloud }),
   });
 
   if (!response.ok) {
@@ -217,6 +217,32 @@ export async function getPiImportStatus(jobId) {
   if (!response.ok) {
     const error = await response.json();
     throw new Error(error.error || 'Failed to get import status');
+  }
+
+  return response.json();
+}
+
+export async function getAwsConfig() {
+  const response = await fetch('/api/aws/config');
+
+  if (!response.ok) {
+    const error = await response.json();
+    throw new Error(error.error || 'Failed to get AWS config');
+  }
+
+  return response.json();
+}
+
+export async function setAwsConfig(config) {
+  const response = await fetch('/api/aws/config', {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(config),
+  });
+
+  if (!response.ok) {
+    const error = await response.json();
+    throw new Error(error.error || 'Failed to save AWS config');
   }
 
   return response.json();

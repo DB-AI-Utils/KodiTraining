@@ -36,12 +36,13 @@ function invalidateConfigCache() {
   configCache = null;
 }
 
-async function piFetch(path, { timeout = 10_000 } = {}) {
+async function piFetch(path, { timeout = 10_000, ...fetchOpts } = {}) {
   const config = await piConfig();
   if (!config) throw new Error('Pi not configured');
 
   const url = `${config.url}${path}`;
-  const options = timeout ? { signal: AbortSignal.timeout(timeout) } : {};
+  const options = { ...fetchOpts };
+  if (timeout) options.signal = AbortSignal.timeout(timeout);
   const res = await fetch(url, options);
 
   if (!res.ok) {
@@ -110,35 +111,7 @@ router.get('/recordings', async (req, res) => {
   try {
     const piRes = await piFetch('/api/recordings');
     const recordings = await piRes.json();
-
-    const sorted = [...recordings].sort((a, b) => a.timestamp.localeCompare(b.timestamp));
-
-    const SESSION_GAP_MS = 10 * 60 * 1000;
-    const sessions = [];
-    let currentSession = null;
-
-    for (const rec of sorted) {
-      const recTime = new Date(rec.timestamp).getTime();
-
-      if (!currentSession || recTime - currentSession._lastTime > SESSION_GAP_MS) {
-        currentSession = {
-          startTime: rec.timestamp,
-          endTime: rec.timestamp,
-          recordings: [],
-          _lastTime: recTime,
-        };
-        sessions.push(currentSession);
-      }
-
-      currentSession.recordings.push(rec);
-      currentSession.endTime = rec.timestamp;
-      currentSession._lastTime = recTime;
-    }
-
-    for (const session of sessions) {
-      delete session._lastTime;
-    }
-
+    const sessions = groupRecordingsIntoSessions(recordings);
     res.json({ sessions });
   } catch (err) {
     res.status(502).json({ error: 'Failed to fetch recordings', details: err.message });
@@ -251,6 +224,43 @@ async function processImport(jobId, filenames) {
     filesA,
     filesB,
   });
+}
+
+export { piFetch, processImport, importJobs };
+
+export function groupRecordingsIntoSessions(recordings) {
+  const sorted = [...recordings].sort((a, b) => a.timestamp.localeCompare(b.timestamp));
+
+  const SESSION_GAP_MS = 10 * 60 * 1000;
+  const sessions = [];
+  let currentSession = null;
+
+  for (const rec of sorted) {
+    const recTime = new Date(rec.timestamp).getTime();
+
+    if (!currentSession || recTime - currentSession._lastTime > SESSION_GAP_MS) {
+      currentSession = {
+        startTime: rec.timestamp,
+        endTime: rec.timestamp,
+        recordings: [],
+        _lastTime: recTime,
+      };
+      sessions.push(currentSession);
+    }
+
+    currentSession.recordings.push(rec);
+    const recEndTime = rec.duration
+      ? new Date(recTime + rec.duration * 1000).toISOString()
+      : rec.timestamp;
+    if (recEndTime > currentSession.endTime) currentSession.endTime = recEndTime;
+    currentSession._lastTime = recTime;
+  }
+
+  for (const session of sessions) {
+    delete session._lastTime;
+  }
+
+  return sessions;
 }
 
 export function hasActiveImports() {

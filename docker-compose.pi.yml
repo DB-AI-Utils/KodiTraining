@@ -1,0 +1,35 @@
+services:
+  telegram-bot-api:
+    image: aiogram/telegram-bot-api:latest
+    command: >
+      --api-id=${TELEGRAM_API_ID}
+      --api-hash=${TELEGRAM_API_HASH}
+      --local
+      --http-port=8081
+      --dir=/data
+    env_file:
+      - .env
+    volumes:
+      - telegram-bot-api-data:/data
+    restart: unless-stopped
+
+  kodi-training:
+    container_name: kodi-training
+    image: ghcr.io/db-ai-utils/koditraining:${IMAGE_TAG:-latest}
+    build:
+      context: .
+      dockerfile: Dockerfile.app
+    ports:
+      - "8086:8086"
+    volumes:
+      - ./uploads:/app/uploads
+      - ./output:/app/output
+      - ./thumbnails:/app/thumbnails
+      - ./aws-config.json:/app/aws-config.json
+      - ./pi-config.json:/app/pi-config.json
+    env_file:
+      - .env
+    restart: unless-stopped
+
+volumes:
+  telegram-bot-api-data:

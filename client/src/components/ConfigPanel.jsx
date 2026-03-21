@@ -1,7 +1,15 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
+import { getAwsConfig } from '../api.js'
 
-function ConfigPanel({ config, onChange }) {
+function ConfigPanel({ config, onChange, cloud, onCloudChange }) {
   const [useOriginalWidth, setUseOriginalWidth] = useState(config.maxWidth === null)
+  const [awsConfigured, setAwsConfigured] = useState(false)
+
+  useEffect(() => {
+    getAwsConfig()
+      .then(res => setAwsConfigured(res.configured || false))
+      .catch(() => setAwsConfigured(false))
+  }, [])
 
   const handleCrfChange = (e) => {
     onChange({ ...config, crf: parseInt(e.target.value) })
@@ -48,6 +56,25 @@ function ConfigPanel({ config, onChange }) {
           <p className="config-hint">
             Use when cameras have different segment lengths. Concatenates all videos from each camera first, then combines side-by-side.
           </p>
+        </div>
+
+        <div className="config-item">
+          <label
+            className="checkbox-label concatenate-first-label"
+            title={!awsConfigured ? 'Configure AWS first (run infra/deploy-image.sh)' : 'Process video in AWS cloud instead of locally'}
+          >
+            <input
+              type="checkbox"
+              checked={cloud}
+              onChange={(e) => onCloudChange(e.target.checked)}
+              disabled={!awsConfigured}
+              className="config-checkbox"
+            />
+            <span style={{ opacity: awsConfigured ? 1 : 0.5 }}>
+              Process in Cloud
+              {!awsConfigured && ' (Configure AWS first)'}
+            </span>
+          </label>
         </div>
       </div>
 

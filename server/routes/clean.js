@@ -26,6 +26,19 @@ router.post('/', async (req, res) => {
 
   await Promise.all(directories.map(dir => clearDirectory(dir)));
 
+  // Clean S3 job files if AWS is configured
+  let s3Cleaned = false;
+  let s3Error = null;
+  try {
+    const cloud = await import('../services/cloud.js');
+    if (await cloud.isConfigured()) {
+      await cloud.deleteAllJobs();
+      s3Cleaned = true;
+    }
+  } catch (err) {
+    s3Error = err.message;
+  }
+
   let piCleaned = false;
   let piError = null;
 
@@ -48,8 +61,9 @@ router.post('/', async (req, res) => {
     piError = err.message;
   }
 
-  const result = { success: true, piCleaned };
+  const result = { success: true, piCleaned, s3Cleaned };
   if (piError) result.piError = piError;
+  if (s3Error) result.s3Error = s3Error;
   res.json(result);
 });
 

@@ -1,0 +1,119 @@
+name: Deploy to Pi
+
+on:
+  workflow_dispatch:
+    inputs:
+      image_tag:
+        description: "Image tag to deploy (commit SHA). Leave empty to build from current code."
+        required: false
+
+concurrency:
+  group: deploy-pi
+  cancel-in-progress: false
+
+env:
+  IMAGE: ghcr.io/${{ github.repository }}
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    if: inputs.image_tag == ''
+    permissions:
+      contents: read
+      packages: write
+    outputs:
+      image_tag: ${{ github.sha }}
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+      - uses: docker/setup-qemu-action@c7c53464625b32c7a7e944ae62b3e17d2b600130 # v3
+        with:
+          platforms: arm64
+      - uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f # v3
+      - uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9 # v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - name: Lowercase image name
+        id: image
+        run: echo "name=${IMAGE,,}" >> "$GITHUB_OUTPUT"
+      - uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8 # v6
+        with:
+          context: .
+          file: Dockerfile.app
+          platforms: linux/arm64
+          push: true
+          tags: |
+            ${{ steps.image.outputs.name }}:${{ github.sha }}
+            ${{ steps.image.outputs.name }}:latest
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+  deploy:
+    needs: build
+    if: always() && (needs.build.result == 'success' || needs.build.result == 'skipped')
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+
+      - name: Validate image tag
+        if: inputs.image_tag != ''
+        run: |
+          if ! echo "${{ inputs.image_tag }}" | grep -qE '^[a-f0-9]{7,40}$'; then
+            echo "::error::Invalid image_tag: must be a 7-40 character hex string (commit SHA)"
+            exit 1
+          fi
+
+      - name: Determine image tag
+        id: tag
+        run: |
+          TAG="${{ inputs.image_tag || github.sha }}"
+          IMAGE_NAME="${IMAGE,,}"
+          echo "tag=${TAG}" >> "$GITHUB_OUTPUT"
+          echo "image=${IMAGE_NAME}" >> "$GITHUB_OUTPUT"
+
+      - name: Setup SSH
+        run: |
+          mkdir -p ~/.ssh && chmod 700 ~/.ssh
+          echo "${{ secrets.DO_SSH_PRIVATE_KEY }}" > ~/.ssh/do_key
+          echo "${{ secrets.PI_SSH_PRIVATE_KEY }}" > ~/.ssh/pi_key
+          chmod 600 ~/.ssh/do_key ~/.ssh/pi_key
+          echo "${{ secrets.KNOWN_HOSTS }}" > ~/.ssh/known_hosts
+          chmod 644 ~/.ssh/known_hosts
+          cat > ~/.ssh/config << 'SSHEOF'
+          Host do-jump
+            HostName ${{ vars.DO_HOST }}
+            User ${{ vars.DO_USER }}
+            IdentityFile ~/.ssh/do_key
+            IdentitiesOnly yes
+
+          Host pi
+            HostName ${{ vars.PI_HOST }}
+            Port ${{ vars.PI_PORT }}
+            User ${{ vars.PI_USER }}
+            IdentityFile ~/.ssh/pi_key
+            IdentitiesOnly yes
+            ProxyJump do-jump
+          SSHEOF
+          chmod 600 ~/.ssh/config
+
+      - name: Sync compose file to Pi
+        run: scp docker-compose.pi.yml pi:~/KodiTraining/docker-compose.pi.yml
+
+      - name: Deploy
+        run: |
+          ssh pi /bin/bash <<DEPLOY
+          set -euo pipefail
+          cd ~/KodiTraining
+          export IMAGE_TAG=${{ steps.tag.outputs.tag }}
+          echo "=== Pulling image: ${{ steps.tag.outputs.image }}:\${IMAGE_TAG} ==="
+          docker compose -f docker-compose.pi.yml pull kodi-training
+          echo "=== Recreating kodi-training ==="
+          docker compose -f docker-compose.pi.yml up -d kodi-training
+          echo "=== Cleaning old images ==="
+          docker image prune -f
+          echo "=== Deploy complete ==="
+          docker ps --filter name=kodi-training --format "table {{.Image}}\t{{.Status}}"
+          DEPLOY

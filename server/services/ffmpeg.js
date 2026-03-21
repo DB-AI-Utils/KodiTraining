@@ -1,11 +1,16 @@
 import ffmpeg from 'fluent-ffmpeg';
-import ffprobeStatic from 'ffprobe-static';
 import { promises as fs } from 'fs';
 import { join } from 'path';
 import { tmpdir } from 'os';
 
-// Set ffprobe path for fluent-ffmpeg
-ffmpeg.setFfprobePath(ffprobeStatic.path);
+// Use ffprobe-static if available (local dev), otherwise system ffprobe (Docker container)
+try {
+  const { default: ffprobeStatic } = await import('ffprobe-static');
+  await fs.access(ffprobeStatic.path);
+  ffmpeg.setFfprobePath(ffprobeStatic.path);
+} catch {
+  // System ffprobe will be used
+}
 
 /**
  * Combine two videos side-by-side using hstack filter

@@ -4,10 +4,10 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-KodiTraining is a local web application that combines dual-camera dog training videos side-by-side. It processes video segments from two cameras (Xiaomi C400), combines them horizontally, concatenates all pairs, and compresses the result for download.
+KodiTraining is a web application that combines dual-camera dog training videos side-by-side. It processes video segments from two cameras (Xiaomi C400), combines them horizontally, concatenates all pairs, and compresses the result for download. Processing can run locally (FFmpeg on host) or in AWS cloud (ECS Fargate).
 
 This is part of a two-app ecosystem:
-- **KodiTraining** (this repo) — video processing & combination UI, runs on a Mac/desktop
+- **KodiTraining** (this repo) — video processing & combination UI, runs on Mac/desktop or Raspberry Pi (Docker)
 - **kodi-pi** (`../kodi-pi`) — Raspberry Pi recording service that captures RTSP streams from Xiaomi cameras via go2rtc
 
 KodiTraining can import recordings directly from kodi-pi via the PiImport panel.
@@ -18,8 +18,8 @@ KodiTraining can import recordings directly from kodi-pi via the PiImport panel.
 # Install all dependencies (root + client)
 npm install && cd client && npm install && cd ..
 
-# Run both server and client concurrently
-npm run dev
+# Run both server and client concurrently (needs AWS_PROFILE for cloud features)
+AWS_PROFILE=kodi npm run dev
 
 # Run server only (port 3001)
 npm run server
@@ -35,54 +35,46 @@ lsof -ti :5173 | xargs kill -9  # Kill client
 cd client && npm run lint
 ```
 
-## Architecture
+## AWS Cloud Processing Setup
 
+```bash
+# 1. Deploy infrastructure (S3, ECR, ECS Fargate, IAM)
+aws cloudformation create-stack \
+  --stack-name kodi-training \
+  --template-body file://infra/cloudformation.yml \
+  --capabilities CAPABILITY_NAMED_IAM \
+  --profile kodi
+
+# 2. Wait for stack
+aws cloudformation wait stack-create-complete --stack-name kodi-training --profile kodi
+
+# 3. Build ARM64 Docker image, push to ECR, write aws-config.json
+AWS_PROFILE=kodi bash infra/deploy-image.sh eu-north-1 kodi-training
 ```
-┌─────────────────────────────────────────────────────────────┐
-│              React Frontend (Vite, port 5173)               │
-│  ┌─────────────────┐     ┌─────────────────┐                │
-│  │  Camera A Zone  │     │  Camera B Zone  │                │
-│  │  (DropZone.jsx) │     │  (DropZone.jsx) │                │
-│  └─────────────────┘     └─────────────────┘                │
-│  PiImport.jsx | ConfigPanel.jsx | App.jsx (state, polling)  │
-│  api.js (fetch wrappers)                                    │
-└──────────────────────────┬──────────────────────────────────┘
-                           │ Vite proxy → localhost:3001
-                           ▼
-┌─────────────────────────────────────────────────────────────┐
-│                Express Backend (port 3001)                   │
-│                                                              │
-│  Routes:                                                     │
-│    POST   /upload/:camera     → uploads file (multer)        │
-│    DELETE /upload/:camera/:id → removes file                 │
-│    GET    /upload/:camera/:id/thumbnail → generates/serves   │
-│    POST   /api/order          → sets video pair order        │
-│    POST   /api/process        → starts FFmpeg pipeline       │
-│    GET    /api/status/:jobId  → returns progress %           │
-│    GET    /api/download/:jobId→ serves final.mp4             │
-│    POST   /reset              → clears all files             │
-│    POST   /api/clean-all      → clears local + Pi recordings │
-│                                                              │
-│  Pi Integration Routes:                                      │
-│    GET/PUT /api/pi/config     → get/set kodi-pi URL          │
-│    GET    /api/pi/status      → proxy kodi-pi health check   │
-│    GET    /api/pi/recordings  → list Pi recordings (sessions)│
-│    POST   /api/pi/import      → download files from Pi       │
-│    GET    /api/pi/import-status/:jobId → import progress     │
-│                                                              │
-│  Services:                                                   │
-│    ffmpeg.js → combinePair, concatenateVideos, compressVideo │
-└──────────────────────┬──────────────────────────────────────┘
-                       │ HTTP proxy (configured URL)
-                       ▼
-┌─────────────────────────────────────────────────────────────┐
-│            kodi-pi (Raspberry Pi, port 8085)                │
-│            ../kodi-pi — separate repository                 │
-│                                                              │
-│  go2rtc service → Xiaomi C400 RTSP streams                  │
-│  Express API → start/stop recording, list/serve files       │
-│  Recordings stored as camera_[ab]_TIMESTAMP.mp4             │
-└─────────────────────────────────────────────────────────────┘
+
+## Pi Deployment (Docker)
+
+```bash
+# On Raspberry Pi — requires .env, aws-config.json, pi-config.json in project root
+docker compose -f docker-compose.pi.yml up -d --build
+
+# Rebuild after code changes
+docker compose -f docker-compose.pi.yml down
+docker compose -f docker-compose.pi.yml up -d --build
+```
+
+App runs on port 8086. Needs `.env` file:
+```
+PORT=8086
+AWS_ACCESS_KEY_ID=<key>
+AWS_SECRET_ACCESS_KEY=<secret>
+AWS_REGION=eu-north-1
+TELEGRAM_BOT_TOKEN=<token>       # Optional: enables auto-processing via Telegram
+TELEGRAM_CHAT_ID=<chat-id>       # Required if bot token is set
+MIN_SESSION_DURATION=30           # Minutes, sessions shorter than this are skipped
+TELEGRAM_API_ID=<id>             # Optional: enables local Bot API for direct video sending
+TELEGRAM_API_HASH=<hash>         # Required if API ID is set. Get both from https://my.telegram.org
+TELEGRAM_API_URL=http://telegram-bot-api:8081  # Required if API ID is set. Points to local Bot API container
 ```
 
 ## FFmpeg Processing Modes
@@ -108,71 +100,85 @@ Original mode for when both cameras have matching segment counts and lengths. Un
 ## Key Implementation Details
 
 ### VFR (Variable Frame Rate) Handling
-The `combinePair` function in `server/services/ffmpeg.js:24-29` applies `fps=30` filter before stacking. This is critical for Xiaomi cameras that record VFR, otherwise output timing is incorrect.
+The `combinePair` function in `server/services/ffmpeg.js` applies `-vsync cfr` at output. This is critical for Xiaomi cameras that record VFR, otherwise output timing is incorrect.
 
-### Thumbnail Generation
-Thumbnails are cropped to just the timestamp area (top-left 700x70 pixels) to help users identify videos by their recording time. Generated on first request, cached in `/thumbnails/` directory.
+### Cloud Processing
+- Toggle "Process in Cloud" in ConfigPanel (enabled by default when AWS configured)
+- Cloud flow: upload to S3 → ECS Fargate task → poll progress.json → download result
+- Progress phases: uploading (0-15%), processing (15-85%), downloading (85-100%)
+- Container runs on ARM64 Graviton (4 vCPU, 8 GB RAM), ~$0.06/job
+- Container reuses `server/services/ffmpeg.js` — same pipeline as local
+- S3 lifecycle rule auto-deletes job files after 7 days
+- "Clean All" also purges S3 job files
 
-### File Upload and Ordering
-- Files are uploaded individually with UUID filenames
-- On upload completion, files are sorted by original filename (`localeCompare`)
-- Native HTML5 drag-to-reorder in file list (no external DnD library)
-- Order sent to `/api/order` before processing starts
+### Telegram Automation
+When `TELEGRAM_BOT_TOKEN` + `TELEGRAM_CHAT_ID` are set, auto-processing is enabled:
+- kodi-pi fires a webhook to KodiTraining when recording stops
+- If session duration ≥ `MIN_SESSION_DURATION`, Telegram prompt is sent (Yes/No)
+- On approval: auto-imports from Pi → cloud processing → sends video directly via Telegram
+- Progress updates (phase + %) sent to Telegram during cloud processing
+- When local Bot API is configured (`TELEGRAM_API_ID`/`TELEGRAM_API_HASH`): sends video file (up to 2GB) directly, then auto-cleans all files (Pi, local, S3)
+- Fallback: if video send fails or local API not configured, sends presigned S3 download link (1h) with manual Delete/New Link buttons
+- Bot uses polling mode (works behind NAT). Must use a dedicated bot token (not shared with other services)
+- Local Bot API Server (`telegram-bot-api` container) required for direct video sending. One-time setup: get credentials from https://my.telegram.org, call `logOut` on bot before switching
+- Session state is in-memory — buttons on old messages won't work after container restart
 
 ### Configuration Defaults
+- Process in Cloud: true (when AWS configured)
 - Concatenate First: true (use concatenate-first mode)
 - CRF: 35 (range 18-35, lower = better quality)
 - Preset: slower (x264 presets from ultrafast to veryslow)
 - Max Width: null (original width by default)
 - Audio Bitrate: 96k
 
-### Pi Import
-- PiImport panel at the top of the UI connects to kodi-pi to browse and import recordings
-- Pi URL stored in `pi-config.json` (persisted across restarts)
-- Recordings grouped into sessions by 10-minute timestamp gaps
-- Import downloads selected files from Pi to `uploads/a` and `uploads/b`
-- "Clean All" button deletes local files AND recordings on the Pi (with confirmation modal)
-
-### State Management
-- Frontend uses React useState with polling for job status
-- Backend stores job progress in-memory Map (no persistence)
-
 ## File Structure
 
 ```
 server/
-├── index.js            # Express app, route mounting
+├── index.js            # Express app, route mounting, static file serving
 ├── routes/
 │   ├── upload.js       # File upload, delete, thumbnail
-│   ├── process.js      # Order, process, status, download
-│   ├── clean.js        # Clean all (local files + Pi recordings)
-│   └── pi.js           # Pi integration (proxy, import, config)
+│   ├── process.js      # Order, process (local + cloud), status, download
+│   ├── clean.js        # Clean all (local + Pi + S3)
+│   ├── pi.js           # Pi integration (proxy, import, config)
+│   ├── webhook.js      # Receives recording-stopped webhook from kodi-pi
+│   └── aws-config.js   # AWS config CRUD
 └── services/
-    └── ffmpeg.js       # combinePair, concatenateVideos, compressVideo
+    ├── ffmpeg.js       # combinePair, concatenateVideos, compressVideo
+    ├── cloud.js        # S3 upload/download, ECS RunTask, progress polling, presigned URLs
+    ├── telegram.js     # Telegram bot (polling mode), inline keyboards, notifications
+    └── automation.js   # Orchestrates webhook → Telegram → import → cloud → notify
+
+container/
+├── process.js          # ECS Fargate entrypoint (S3 ↔ FFmpeg pipeline)
+└── package.json        # Container-only deps (@aws-sdk/client-s3, fluent-ffmpeg)
+
+infra/
+├── cloudformation.yml  # AWS resources (S3, ECR, ECS, IAM)
+└── deploy-image.sh     # Build ARM64 image, push to ECR, write aws-config.json
 
 client/src/
-├── App.jsx             # Main state, job polling, UI layout
+├── App.jsx             # Main state, job polling, cloud phase labels
 ├── App.css             # All styles (no CSS modules)
-├── api.js              # Fetch wrappers for all endpoints
+├── api.js              # Fetch wrappers (incl. AWS config endpoints)
 └── components/
     ├── DropZone.jsx    # Upload zone, file list, drag-reorder
-    ├── ConfigPanel.jsx # CRF slider, preset/width/audio selects
+    ├── ConfigPanel.jsx # CRF slider, preset/width/audio, cloud toggle
     └── PiImport.jsx    # Browse & import recordings from kodi-pi
 
-pi-config.json          # Persisted kodi-pi URL (default: raspberrypi.local:8085)
+Dockerfile              # FFmpeg container for ECS Fargate (ARM64)
+Dockerfile.app          # Full app container for Pi deployment
+docker-compose.pi.yml   # Pi deployment (port 8086, includes telegram-bot-api for direct video sending)
+aws-config.json         # AWS resource ARNs — bucket, cluster, task def, region (gitignored)
+pi-config.json          # Persisted kodi-pi URL (gitignored)
 ```
-
-## Temporary Directories (gitignored)
-
-- `uploads/a/` - Camera A video uploads
-- `uploads/b/` - Camera B video uploads
-- `output/` - Processing output (pairs/, combined.mp4, final.mp4)
-- `thumbnails/` - Generated video thumbnails
 
 ## System Requirements
 
 - Node.js
 - FFmpeg installed and available in PATH (`brew install ffmpeg` on macOS)
+- AWS CLI configured with `kodi` profile (for cloud processing)
+- Docker (for Pi deployment and building ECS container image)
 
 ## Companion App: kodi-pi
 
@@ -183,4 +189,5 @@ The recording service lives at `../kodi-pi` (separate repo). Key details for con
 - **What it does**: Captures dual RTSP streams from two Xiaomi C400 cameras via go2rtc, records to MP4 with FFmpeg (`-c copy`, no re-encoding), serves a mobile-friendly UI for start/stop
 - **Recording format**: `camera_[ab]_YYYY-MM-DDTHH-MM-SS.mp4` with JSON sidecar metadata files
 - **API endpoints**: `/api/status`, `/api/record/start`, `/api/record/stop`, `/api/recordings` (list/download/delete)
+- **Webhook**: Fires POST to `KODI_TRAINING_URL/api/webhook/recording-stopped` when recording stops (auto or manual)
 - **Deployment**: Docker Compose with go2rtc + kodi-pi containers, host networking, volume-mounted recordings dir
