@@ -16,17 +16,15 @@ export function init() {
   bot = new TelegramBot(BOT_TOKEN, { polling: true });
 
   bot.on('callback_query', async (query) => {
-    if (callbackHandler) {
-      try {
-        await callbackHandler(query);
-      } catch (err) {
-        console.error('[telegram] Callback handler error:', err.message);
-      }
-    }
     try {
       await bot.answerCallbackQuery(query.id);
     } catch {
       // ignore if already answered
+    }
+    if (callbackHandler) {
+      callbackHandler(query).catch(err => {
+        console.error('[telegram] Callback handler error:', err.message);
+      });
     }
   });
 

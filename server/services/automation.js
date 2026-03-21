@@ -1,6 +1,11 @@
 import { v4 as uuidv4 } from 'uuid';
 import { promises as fs } from 'fs';
+import { join, dirname } from 'path';
+import { fileURLToPath } from 'url';
 import { piFetch, groupRecordingsIntoSessions, processImport } from '../routes/pi.js';
+
+const __dirname = dirname(fileURLToPath(import.meta.url));
+const FINAL_PATH = join(__dirname, '../../output/final.mp4');
 import { setVideoOrder, processCloud, jobs } from '../routes/process.js';
 import * as telegram from './telegram.js';
 import { getPresignedDownloadUrl } from './cloud.js';
@@ -128,11 +133,16 @@ export async function handleRecordingStopped(payload) {
 }
 
 export async function handleApproval(sessionId) {
+  if (busy) return;
+  busy = true;
+
   const session = sessions.get(sessionId);
-  if (!session || session.status !== 'pending_approval') return;
+  if (!session || session.status !== 'pending_approval') {
+    busy = false;
+    return;
+  }
 
   session.status = 'importing';
-  busy = true;
 
   try {
     await telegram.sendProgress(session.telegramMessageId, '⏳ *Importing recordings from Pi...*');
@@ -192,7 +202,7 @@ export async function handleApproval(sessionId) {
       return;
     }
 
-    const finalPath = new URL('../../output/final.mp4', import.meta.url).pathname;
+    const finalPath = FINAL_PATH;
     let size = 'unknown';
     try {
       const stat = await fs.stat(finalPath);
@@ -254,7 +264,7 @@ export async function handleDelete(sessionId) {
   }
 
   try {
-    const finalPath = new URL('../../output/final.mp4', import.meta.url).pathname;
+    const finalPath = FINAL_PATH;
     await fs.unlink(finalPath);
   } catch { /* might not exist */ }
 
@@ -285,7 +295,7 @@ export async function handleNewLink(sessionId) {
 
   let size = 'unknown';
   try {
-    const finalPath = new URL('../../output/final.mp4', import.meta.url).pathname;
+    const finalPath = FINAL_PATH;
     const stat = await fs.stat(finalPath);
     size = formatSize(stat.size);
   } catch { /* ignore */ }
