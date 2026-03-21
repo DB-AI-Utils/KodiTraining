@@ -15,6 +15,7 @@ services:
 
   kodi-training:
     container_name: kodi-training
+    image: ghcr.io/db-ai-utils/koditraining:${IMAGE_TAG:-latest}
     build:
       context: .
       dockerfile: Dockerfile.app
