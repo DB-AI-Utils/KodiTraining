@@ -15,8 +15,6 @@ const GO2RTC_API = process.env.GO2RTC_API || 'http://localhost:1984';
 const CAMERA_WAIT_TIMEOUT_MS = 30_000;
 const CAMERA_POLL_INTERVAL_MS = 2_000;
 
-const importJobs = new Map();
-
 let onRecordingStopped = null;
 export function setOnRecordingStopped(fn) { onRecordingStopped = fn; }
 
