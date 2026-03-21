@@ -2,7 +2,7 @@ import { useState, useEffect, useRef } from 'react'
 import './App.css'
 import DropZone from './components/DropZone'
 import ConfigPanel from './components/ConfigPanel'
-import PiImport from './components/PiImport'
+import RecordingsPanel from './components/RecordingsPanel'
 import { setOrder, startProcess, getStatus, getDownloadUrl, cleanAll } from './api.js'
 
 function App() {
@@ -79,8 +79,8 @@ function App() {
         pollingIntervalRef.current = null
       }
 
-      if (result.piError) {
-        setError(`Local files cleaned. Pi cleanup failed: ${result.piError}`)
+      if (result.recordingsError) {
+        setError(`Local files cleaned. Recordings cleanup failed: ${result.recordingsError}`)
       }
     } catch (err) {
       setError(err.message || 'Clean all failed')
@@ -161,7 +161,7 @@ function App() {
         <h1>KodiTraining - Dual Camera Video Processor</h1>
       </header>
 
-      <PiImport
+      <RecordingsPanel
         resetKey={cleanAllKey}
         onImportComplete={(newA, newB) => {
           setFilesA(prev => [...prev, ...newA])
@@ -248,7 +248,7 @@ function App() {
         <div className="modal-overlay" onClick={() => setShowCleanConfirm(false)}>
           <div className="modal" onClick={e => e.stopPropagation()}>
             <h3>Clean All</h3>
-            <p>This will delete all local uploads, output files, and recordings on the Pi. Are you sure?</p>
+            <p>This will delete all local uploads, output files, and recordings. Are you sure?</p>
             <div className="modal-actions">
               <button className="modal-cancel" onClick={() => setShowCleanConfirm(false)}>
                 Cancel

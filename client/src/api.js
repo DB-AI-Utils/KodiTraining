@@ -148,77 +148,74 @@ export async function cleanAll() {
   return response.json();
 }
 
-export async function getPiConfig() {
-  const response = await fetch('/api/pi/config');
-
+export async function getRecordingStatus() {
+  const response = await fetch('/api/recording/status');
   if (!response.ok) {
     const error = await response.json();
-    throw new Error(error.error || 'Failed to get Pi config');
+    throw new Error(error.error || 'Failed to get recording status');
   }
-
   return response.json();
 }
 
-export async function setPiConfig(url) {
-  const response = await fetch('/api/pi/config', {
+export async function startRecording() {
+  const response = await fetch('/api/recording/record/start', { method: 'POST' });
+  if (!response.ok) {
+    const error = await response.json();
+    throw new Error(error.error || 'Failed to start recording');
+  }
+  return response.json();
+}
+
+export async function stopRecording() {
+  const response = await fetch('/api/recording/record/stop', { method: 'POST' });
+  if (!response.ok) {
+    const error = await response.json();
+    throw new Error(error.error || 'Failed to stop recording');
+  }
+  return response.json();
+}
+
+export async function setAutoRecord(enabled) {
+  const response = await fetch('/api/recording/auto-record', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ url }),
+    body: JSON.stringify({ enabled }),
   });
-
   if (!response.ok) {
     const error = await response.json();
-    throw new Error(error.error || 'Failed to save Pi config');
+    throw new Error(error.error || 'Failed to set auto-record');
   }
-
   return response.json();
 }
 
-export async function getPiStatus() {
-  const response = await fetch('/api/pi/status');
-
-  if (!response.ok) {
-    const error = await response.json();
-    throw new Error(error.error || 'Failed to get Pi status');
-  }
-
-  return response.json();
-}
-
-export async function getPiRecordings() {
-  const response = await fetch('/api/pi/recordings');
-
+export async function getRecordings() {
+  const response = await fetch('/api/recording/recordings');
   if (!response.ok) {
     const error = await response.json();
     throw new Error(error.error || 'Failed to fetch recordings');
   }
-
   return response.json();
 }
 
-export async function importFromPi(filenames) {
-  const response = await fetch('/api/pi/import', {
+export async function importRecordings(filenames) {
+  const response = await fetch('/api/recording/import', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ filenames }),
   });
-
   if (!response.ok) {
     const error = await response.json();
     throw new Error(error.error || 'Failed to start import');
   }
-
   return response.json();
 }
 
-export async function getPiImportStatus(jobId) {
-  const response = await fetch(`/api/pi/import-status/${jobId}`);
-
+export async function getImportStatus(jobId) {
+  const response = await fetch(`/api/recording/import-status/${jobId}`);
   if (!response.ok) {
     const error = await response.json();
     throw new Error(error.error || 'Failed to get import status');
   }
-
   return response.json();
 }
 

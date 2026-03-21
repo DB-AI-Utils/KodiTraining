@@ -1,11 +1,12 @@
 import { useState, useEffect, useRef, useCallback } from 'react'
 import {
-  getPiConfig,
-  setPiConfig,
-  getPiStatus,
-  getPiRecordings,
-  importFromPi,
-  getPiImportStatus,
+  getRecordingStatus,
+  getRecordings,
+  startRecording,
+  stopRecording,
+  setAutoRecord,
+  importRecordings,
+  getImportStatus,
 } from '../api.js'
 
 function formatSize(bytes) {
@@ -23,6 +24,12 @@ function formatDuration(seconds) {
   return `${m}:${String(sec).padStart(2, '0')}`
 }
 
+function formatElapsed(seconds) {
+  const m = Math.floor(seconds / 60)
+  const s = Math.floor(seconds % 60)
+  return `${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`
+}
+
 function formatSessionTime(isoString) {
   const d = new Date(isoString)
   return d.toLocaleString(undefined, {
@@ -33,20 +40,41 @@ function formatSessionTime(isoString) {
   })
 }
 
-function PiImport({ onImportComplete, resetKey }) {
-  const [config, setConfig] = useState(null)
-  const [connected, setConnected] = useState(false)
+function groupRecordingsIntoSessions(recordings) {
+  const sorted = [...recordings].sort((a, b) => a.timestamp.localeCompare(b.timestamp))
+  const SESSION_GAP_MS = 10 * 60 * 1000
+  const sessions = []
+  let current = null
+
+  for (const rec of sorted) {
+    const recTime = new Date(rec.timestamp).getTime()
+    if (!current || recTime - current._lastTime > SESSION_GAP_MS) {
+      current = { startTime: rec.timestamp, endTime: rec.timestamp, recordings: [], _lastTime: recTime }
+      sessions.push(current)
+    }
+    current.recordings.push(rec)
+    const recEnd = rec.duration
+      ? new Date(recTime + rec.duration * 1000).toISOString()
+      : rec.timestamp
+    if (recEnd > current.endTime) current.endTime = recEnd
+    current._lastTime = recTime
+  }
+
+  return sessions
+}
+
+function RecordingsPanel({ onImportComplete, resetKey }) {
+  const [recordingAvailable, setRecordingAvailable] = useState(null)
+  const [recStatus, setRecStatus] = useState(null)
   const [recordings, setRecordings] = useState(null)
   const [selected, setSelected] = useState(new Set())
   const [importing, setImporting] = useState(false)
   const [importProgress, setImportProgress] = useState(0)
   const [expanded, setExpanded] = useState(false)
-  const [urlInput, setUrlInput] = useState('')
-  const [showConfig, setShowConfig] = useState(false)
   const [error, setError] = useState(null)
   const [successMsg, setSuccessMsg] = useState(null)
-  const [connecting, setConnecting] = useState(false)
   const [loadingRecordings, setLoadingRecordings] = useState(false)
+  const [actionPending, setActionPending] = useState(false)
 
   const statusIntervalRef = useRef(null)
   const importIntervalRef = useRef(null)
@@ -65,29 +93,19 @@ function PiImport({ onImportComplete, resetKey }) {
     setTimeout(() => setError(null), 5000)
   }, [])
 
-  useEffect(() => {
-    getPiConfig()
-      .then(cfg => {
-        if (cfg.configured) {
-          setConfig(cfg)
-          setUrlInput(cfg.url)
-        }
-      })
-      .catch(() => {})
+  const checkStatus = useCallback(async () => {
+    try {
+      const status = await getRecordingStatus()
+      setRecStatus(status)
+      setRecordingAvailable(true)
+    } catch {
+      setRecordingAvailable(false)
+    }
   }, [])
 
-  const checkStatus = useCallback(async () => {
-    if (!config?.configured) {
-      setConnected(false)
-      return
-    }
-    try {
-      await getPiStatus()
-      setConnected(true)
-    } catch {
-      setConnected(false)
-    }
-  }, [config])
+  useEffect(() => {
+    checkStatus()
+  }, [checkStatus])
 
   useEffect(() => {
     if (!expanded) {
@@ -99,7 +117,7 @@ function PiImport({ onImportComplete, resetKey }) {
     }
 
     checkStatus()
-    statusIntervalRef.current = setInterval(checkStatus, 10_000)
+    statusIntervalRef.current = setInterval(checkStatus, 2000)
 
     return () => {
       if (statusIntervalRef.current) {
@@ -112,8 +130,8 @@ function PiImport({ onImportComplete, resetKey }) {
   const loadRecordings = useCallback(async () => {
     setLoadingRecordings(true)
     try {
-      const data = await getPiRecordings()
-      setRecordings(data.sessions || [])
+      const data = await getRecordings()
+      setRecordings(data)
     } catch (err) {
       setError(err.message)
       clearError()
@@ -123,34 +141,45 @@ function PiImport({ onImportComplete, resetKey }) {
   }, [clearError])
 
   useEffect(() => {
-    if (expanded && config?.configured && connected && !recordings) {
+    if (expanded && recordingAvailable && !recordings) {
       loadRecordings()
     }
-  }, [expanded, config, connected, recordings, loadRecordings])
+  }, [expanded, recordingAvailable, recordings, loadRecordings])
 
-  const handleConnect = async () => {
-    if (!urlInput.trim()) return
-    setConnecting(true)
+  const handleStartRecording = async () => {
+    setActionPending(true)
     setError(null)
     try {
-      const result = await setPiConfig(urlInput.trim())
-      const newConfig = { url: urlInput.trim(), configured: true }
-      setConfig(newConfig)
-      setShowConfig(false)
-
-      if (result.warning) {
-        setConnected(false)
-        setError(result.warning)
-        clearError()
-      } else {
-        setConnected(true)
-        setRecordings(null)
-      }
+      await startRecording()
     } catch (err) {
       setError(err.message)
       clearError()
     } finally {
-      setConnecting(false)
+      setActionPending(false)
+    }
+  }
+
+  const handleStopRecording = async () => {
+    setActionPending(true)
+    setError(null)
+    try {
+      await stopRecording()
+      setTimeout(loadRecordings, 1000)
+    } catch (err) {
+      setError(err.message)
+      clearError()
+    } finally {
+      setActionPending(false)
+    }
+  }
+
+  const handleAutoRecordToggle = async (enabled) => {
+    setError(null)
+    try {
+      await setAutoRecord(enabled)
+    } catch (err) {
+      setError(err.message)
+      clearError()
     }
   }
 
@@ -162,27 +191,20 @@ function PiImport({ onImportComplete, resetKey }) {
   const toggleRecording = (filename) => {
     setSelected(prev => {
       const next = new Set(prev)
-      if (next.has(filename)) {
-        next.delete(filename)
-      } else {
-        next.add(filename)
-      }
+      if (next.has(filename)) next.delete(filename)
+      else next.add(filename)
       return next
     })
   }
 
   const toggleSession = (session) => {
-    const sessionFilenames = session.recordings.map(r => r.filename)
-    const allSelected = sessionFilenames.every(f => selected.has(f))
-
+    const filenames = session.recordings.map(r => r.filename)
+    const allSelected = filenames.every(f => selected.has(f))
     setSelected(prev => {
       const next = new Set(prev)
-      for (const f of sessionFilenames) {
-        if (allSelected) {
-          next.delete(f)
-        } else {
-          next.add(f)
-        }
+      for (const f of filenames) {
+        if (allSelected) next.delete(f)
+        else next.add(f)
       }
       return next
     })
@@ -196,11 +218,11 @@ function PiImport({ onImportComplete, resetKey }) {
     setSuccessMsg(null)
 
     try {
-      const { jobId } = await importFromPi([...selected])
+      const { jobId } = await importRecordings([...selected])
 
       const pollImport = async () => {
         try {
-          const status = await getPiImportStatus(jobId)
+          const status = await getImportStatus(jobId)
           setImportProgress(status.progress || 0)
 
           if (status.status === 'complete') {
@@ -257,21 +279,29 @@ function PiImport({ onImportComplete, resetKey }) {
     }
   }, [])
 
-  const statusDotClass = !config?.configured
-    ? 'pi-status-dot gray'
-    : connected
-      ? 'pi-status-dot green'
-      : 'pi-status-dot red'
+  const isRecording = recStatus?.camera_a?.status === 'recording' || recStatus?.camera_b?.status === 'recording'
+  const autoRecord = recStatus?.autoRecord
 
-  const selectedRecordings = recordings
-    ? recordings.flatMap(s => s.recordings).filter(r => selected.has(r.filename))
-    : []
+  const statusDotClass = recordingAvailable === null
+    ? 'pi-status-dot gray'
+    : isRecording
+      ? 'pi-status-dot red'
+      : recordingAvailable
+        ? 'pi-status-dot green'
+        : 'pi-status-dot gray'
+
+  const sessions = recordings ? groupRecordingsIntoSessions(recordings) : null
+  const allRecordings = sessions ? sessions.flatMap(s => s.recordings) : []
+  const selectedRecordings = allRecordings.filter(r => selected.has(r.filename))
   const totalSelectedSize = selectedRecordings.reduce((sum, r) => sum + (r.size || 0), 0)
 
   return (
     <div className="pi-import">
       <div className="pi-import-header" onClick={handleToggleExpand}>
-        <span className="pi-import-title">Import from Pi</span>
+        <span className="pi-import-title">
+          Recordings
+          {isRecording && <span style={{ color: '#dc3545', marginLeft: 8, fontSize: '0.85rem' }}>REC</span>}
+        </span>
         <span className={statusDotClass} />
         <svg
           className={`pi-chevron ${expanded ? 'pi-chevron-expanded' : ''}`}
@@ -289,37 +319,57 @@ function PiImport({ onImportComplete, resetKey }) {
           {error && <div className="pi-error">{error}</div>}
           {successMsg && <div className="pi-success">{successMsg}</div>}
 
-          {(!config?.configured || showConfig) && (
-            <div className="pi-config">
-              <div className="pi-config-row">
-                <input
-                  type="text"
-                  className="pi-config-input"
-                  placeholder="http://192.168.1.50:8085"
-                  value={urlInput}
-                  onChange={e => setUrlInput(e.target.value)}
-                  onKeyDown={e => e.key === 'Enter' && handleConnect()}
-                  disabled={connecting}
-                />
+          {recordingAvailable && (
+            <div style={{ marginBottom: 16 }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 10 }}>
                 <button
                   className="pi-config-btn"
-                  onClick={handleConnect}
-                  disabled={connecting || !urlInput.trim()}
+                  style={isRecording ? { background: '#dc3545' } : {}}
+                  onClick={isRecording ? handleStopRecording : handleStartRecording}
+                  disabled={actionPending}
                 >
-                  {connecting ? 'Connecting...' : 'Connect'}
+                  {actionPending ? '...' : isRecording ? 'Stop Recording' : 'Start Recording'}
                 </button>
+
+                {isRecording && recStatus?.camera_a?.elapsed != null && (
+                  <span style={{ fontFamily: 'monospace', fontSize: '1.1rem', fontWeight: 600, color: '#dc3545' }}>
+                    {formatElapsed(recStatus.camera_a.elapsed)}
+                  </span>
+                )}
+
+                <label style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: 6, fontSize: '0.85rem', color: '#555' }}>
+                  <input
+                    type="checkbox"
+                    className="pi-checkbox"
+                    checked={autoRecord?.enabled ?? false}
+                    onChange={e => handleAutoRecordToggle(e.target.checked)}
+                  />
+                  Auto-record
+                  {autoRecord?.state && autoRecord.state !== 'idle' && (
+                    <span style={{
+                      fontSize: '0.75rem',
+                      padding: '1px 6px',
+                      borderRadius: 3,
+                      background: autoRecord.state === 'recording' ? '#dc3545' : autoRecord.state === 'debounce' ? '#ffc107' : '#6c757d',
+                      color: 'white',
+                      fontWeight: 600,
+                    }}>
+                      {autoRecord.state}
+                    </span>
+                  )}
+                </label>
               </div>
+
+              {isRecording && (
+                <div style={{ display: 'flex', gap: 16, fontSize: '0.85rem', color: '#666' }}>
+                  <span>Camera A: <b style={{ color: recStatus?.camera_a?.status === 'recording' ? '#28a745' : '#999' }}>{recStatus?.camera_a?.status}</b></span>
+                  <span>Camera B: <b style={{ color: recStatus?.camera_b?.status === 'recording' ? '#28a745' : '#999' }}>{recStatus?.camera_b?.status}</b></span>
+                </div>
+              )}
             </div>
           )}
 
-          {config?.configured && !showConfig && (
-            <div className="pi-config-status">
-              <span className="pi-config-url">{config.url}</span>
-              <button className="pi-config-edit" onClick={() => setShowConfig(true)}>Edit</button>
-            </div>
-          )}
-
-          {config?.configured && connected && (
+          {recordingAvailable && (
             <>
               <div className="pi-toolbar">
                 <button
@@ -331,11 +381,11 @@ function PiImport({ onImportComplete, resetKey }) {
                 </button>
               </div>
 
-              {recordings && recordings.length === 0 && (
-                <p className="pi-empty">No recordings found on Pi.</p>
+              {sessions && sessions.length === 0 && (
+                <p className="pi-empty">No recordings found.</p>
               )}
 
-              {recordings && recordings.map((session) => {
+              {sessions && sessions.map((session) => {
                 const sessionFilenames = session.recordings.map(r => r.filename)
                 const allSelected = sessionFilenames.every(f => selected.has(f))
                 const someSelected = sessionFilenames.some(f => selected.has(f))
@@ -412,8 +462,8 @@ function PiImport({ onImportComplete, resetKey }) {
             </>
           )}
 
-          {config?.configured && !connected && !showConfig && (
-            <p className="pi-unreachable">Pi is not reachable. Check the URL and make sure it is running.</p>
+          {recordingAvailable === false && (
+            <p className="pi-empty">Recording services not available (no RTSP configured).</p>
           )}
         </div>
       )}
@@ -421,4 +471,4 @@ function PiImport({ onImportComplete, resetKey }) {
   )
 }
 
-export default PiImport
+export default RecordingsPanel
