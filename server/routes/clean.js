@@ -1,16 +1,15 @@
 import express from 'express';
-import { promises as fs } from 'fs';
 import { join, dirname } from 'path';
 import { fileURLToPath } from 'url';
 import { clearDirectory } from './reset.js';
 import { hasActiveJobs } from './process.js';
-import { hasActiveImports } from './pi.js';
+import { hasActiveImports } from './recording.js';
+import * as recorder from '../services/recorder.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const router = express.Router();
 
 const projectRoot = join(__dirname, '../..');
-const CONFIG_PATH = join(projectRoot, 'pi-config.json');
 
 const directories = [
   join(projectRoot, 'uploads/a'),
@@ -39,30 +38,18 @@ router.post('/', async (req, res) => {
     s3Error = err.message;
   }
 
-  let piCleaned = false;
-  let piError = null;
+  let recordingsCleaned = false;
+  let recordingsError = null;
 
   try {
-    const raw = await fs.readFile(CONFIG_PATH, 'utf-8');
-    const config = JSON.parse(raw);
-    if (config.url) {
-      const piRes = await fetch(`${config.url}/api/recordings`, {
-        method: 'DELETE',
-        signal: AbortSignal.timeout(10_000),
-      });
-      if (!piRes.ok) {
-        const body = await piRes.json().catch(() => ({}));
-        piError = body.error || `Pi returned ${piRes.status}`;
-      } else {
-        piCleaned = true;
-      }
-    }
+    recorder.deleteAllRecordings();
+    recordingsCleaned = true;
   } catch (err) {
-    piError = err.message;
+    recordingsError = err.message;
   }
 
-  const result = { success: true, piCleaned, s3Cleaned };
-  if (piError) result.piError = piError;
+  const result = { success: true, recordingsCleaned, s3Cleaned };
+  if (recordingsError) result.recordingsError = recordingsError;
   if (s3Error) result.s3Error = s3Error;
   res.json(result);
 });

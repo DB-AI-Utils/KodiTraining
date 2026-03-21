@@ -2,7 +2,8 @@ import { v4 as uuidv4 } from 'uuid';
 import { promises as fs } from 'fs';
 import { join, dirname } from 'path';
 import { fileURLToPath } from 'url';
-import { piFetch, groupRecordingsIntoSessions, processImport } from '../routes/pi.js';
+import * as recorder from './recorder.js';
+import { groupRecordingsIntoSessions, processImport, importJobs } from '../routes/recording.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const FINAL_PATH = join(__dirname, '../../output/final.mp4');
@@ -72,8 +73,7 @@ export async function handleRecordingStopped(payload) {
 
   let recordings;
   try {
-    const piRes = await piFetch('/api/recordings');
-    recordings = await piRes.json();
+    recordings = await recorder.listRecordings();
   } catch (err) {
     console.error('[automation] Failed to fetch recordings:', err.message);
     await telegram.sendMessage(`⚠️ Recording stopped but couldn't fetch details: ${err.message}`);
@@ -160,7 +160,6 @@ export async function handleApproval(sessionId) {
     const importJobId = uuidv4();
     await processImport(importJobId, session.filenames);
 
-    const { importJobs } = await import('../routes/pi.js');
     const importResult = importJobs.get(importJobId);
     if (!importResult || importResult.status !== 'complete') {
       throw new Error(importResult?.error || 'Import failed');
@@ -262,7 +261,7 @@ export async function handleApproval(sessionId) {
           `✅ <b>Processing Complete</b>\n\n⏱ Duration: ${duration}\n💾 Size: ${size}`,
           {
             inline_keyboard: [[
-              { text: '🗑 Delete Pi recordings', callback_data: `delete:${sessionId}` },
+              { text: '🗑 Delete recordings', callback_data: `delete:${sessionId}` },
             ]],
           }
         );
@@ -334,18 +333,18 @@ async function cleanupLocalAndS3(session) {
   return { localDeleted };
 }
 
-async function cleanupPiRecordings(session) {
-  let piDeleted = 0;
+async function cleanupRecordings(session) {
+  let deleted = 0;
   for (const filename of session.filenames) {
     try {
-      await piFetch(`/api/recordings/${encodeURIComponent(filename)}`, { method: 'DELETE' });
-      piDeleted++;
+      recorder.deleteRecording(filename);
+      deleted++;
     } catch (err) {
-      console.warn(`[automation] Failed to delete ${filename} from Pi: ${err.message}`);
+      console.warn(`[automation] Failed to delete ${filename}: ${err.message}`);
     }
   }
-  console.log(`[automation] Deleted ${piDeleted} Pi recordings`);
-  return { piDeleted };
+  console.log(`[automation] Deleted ${deleted} recordings`);
+  return { deleted };
 }
 
 export async function handleDelete(sessionId) {
@@ -354,13 +353,13 @@ export async function handleDelete(sessionId) {
 
   await telegram.editMessage(session.telegramMessageId, '🗑 <b>Deleting source files...</b>');
 
-  const { piDeleted } = await cleanupPiRecordings(session);
+  const { deleted } = await cleanupRecordings(session);
   await cleanupLocalAndS3(session);
   sessions.delete(sessionId);
 
   await telegram.editMessage(
     session.telegramMessageId,
-    `🗑 <b>Deleted</b> — removed ${piDeleted} recordings from Pi.`
+    `🗑 <b>Deleted</b> — removed ${deleted} recordings.`
   );
 }
 

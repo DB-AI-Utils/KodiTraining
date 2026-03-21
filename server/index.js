@@ -6,12 +6,10 @@ import { existsSync } from 'fs';
 import uploadRoutes from './routes/upload.js';
 import resetRoutes from './routes/reset.js';
 import processRoutes from './routes/process.js';
-import piRoutes from './routes/pi.js';
 import cleanRoutes from './routes/clean.js';
 import awsConfigRoutes from './routes/aws-config.js';
-import webhookRoutes from './routes/webhook.js';
 import * as telegram from './services/telegram.js';
-import { initCallbackHandler } from './services/automation.js';
+import { initCallbackHandler, handleRecordingStopped } from './services/automation.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const app = express();
@@ -27,16 +25,38 @@ app.get('/health', (req, res) => {
 app.use('/upload', uploadRoutes);
 app.use('/reset', resetRoutes);
 app.use('/api', processRoutes);
-app.use('/api/pi', piRoutes);
 app.use('/api/aws', awsConfigRoutes);
 app.use('/api/clean-all', cleanRoutes);
-app.use('/api/webhook', webhookRoutes);
 
 // Initialize Telegram bot + automation if configured
 if (telegram.isConfigured()) {
   telegram.init();
   initCallbackHandler();
   console.log('Telegram automation enabled');
+}
+
+// Initialize recording services if RTSP is configured (Pi deployment)
+if (process.env.RTSP_BASE) {
+  const { default: recordingRoutes, setOnRecordingStopped: setRouteCallback } = await import('./routes/recording.js');
+  const recorder = await import('./services/recorder.js');
+  const autoRecord = await import('./services/auto-record.js');
+
+  // Wire callbacks to break circular dependency
+  autoRecord.setOnRecordingStopped(handleRecordingStopped);
+  setRouteCallback(handleRecordingStopped);
+
+  app.use('/api/recording', recordingRoutes);
+  await recorder.cleanupOrphans();
+  await autoRecord.init();
+  console.log('Recording services enabled');
+
+  for (const signal of ['SIGTERM', 'SIGINT']) {
+    process.on(signal, async () => {
+      autoRecord.shutdown();
+      await recorder.stopAll().catch(() => {});
+      process.exit(0);
+    });
+  }
 }
 
 // Serve built client in production
