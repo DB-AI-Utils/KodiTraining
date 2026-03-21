@@ -72,6 +72,8 @@ AWS_REGION=eu-north-1
 TELEGRAM_BOT_TOKEN=<token>       # Optional: enables auto-processing via Telegram
 TELEGRAM_CHAT_ID=<chat-id>       # Required if bot token is set
 MIN_SESSION_DURATION=30           # Minutes, sessions shorter than this are skipped
+TELEGRAM_API_ID=<id>             # Optional: enables local Bot API for direct video sending
+TELEGRAM_API_HASH=<hash>         # Required if API ID is set. Get both from https://my.telegram.org
 ```
 
 ## FFmpeg Processing Modes
@@ -112,8 +114,12 @@ The `combinePair` function in `server/services/ffmpeg.js` applies `-vsync cfr` a
 When `TELEGRAM_BOT_TOKEN` + `TELEGRAM_CHAT_ID` are set, auto-processing is enabled:
 - kodi-pi fires a webhook to KodiTraining when recording stops
 - If session duration ≥ `MIN_SESSION_DURATION`, Telegram prompt is sent (Yes/No)
-- On approval: auto-imports from Pi → cloud processing → presigned S3 download link (1h)
+- On approval: auto-imports from Pi → cloud processing → sends video directly via Telegram
+- Progress updates (phase + %) sent to Telegram during cloud processing
+- When local Bot API is configured (`TELEGRAM_API_ID`/`TELEGRAM_API_HASH`): sends video file (up to 2GB) directly, then auto-cleans all files (Pi, local, S3)
+- Fallback: if video send fails or local API not configured, sends presigned S3 download link (1h) with manual Delete/New Link buttons
 - Bot uses polling mode (works behind NAT). Must use a dedicated bot token (not shared with other services)
+- Local Bot API Server (`telegram-bot-api` container) required for direct video sending. One-time setup: get credentials from https://my.telegram.org, call `logOut` on bot before switching
 - Session state is in-memory — buttons on old messages won't work after container restart
 
 ### Configuration Defaults
@@ -161,7 +167,7 @@ client/src/
 
 Dockerfile              # FFmpeg container for ECS Fargate (ARM64)
 Dockerfile.app          # Full app container for Pi deployment
-docker-compose.pi.yml   # Pi deployment (port 8086)
+docker-compose.pi.yml   # Pi deployment (port 8086, includes telegram-bot-api for direct video sending)
 aws-config.json         # AWS resource ARNs — bucket, cluster, task def, region (gitignored)
 pi-config.json          # Persisted kodi-pi URL (gitignored)
 ```
