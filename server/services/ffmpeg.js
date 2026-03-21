@@ -6,6 +6,7 @@ import { tmpdir } from 'os';
 // Use ffprobe-static if available (local dev), otherwise system ffprobe (Docker container)
 try {
   const { default: ffprobeStatic } = await import('ffprobe-static');
+  await fs.access(ffprobeStatic.path);
   ffmpeg.setFfprobePath(ffprobeStatic.path);
 } catch {
   // System ffprobe will be used
