@@ -9,6 +9,9 @@ import processRoutes from './routes/process.js';
 import piRoutes from './routes/pi.js';
 import cleanRoutes from './routes/clean.js';
 import awsConfigRoutes from './routes/aws-config.js';
+import webhookRoutes from './routes/webhook.js';
+import * as telegram from './services/telegram.js';
+import { initCallbackHandler } from './services/automation.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const app = express();
@@ -27,6 +30,14 @@ app.use('/api', processRoutes);
 app.use('/api/pi', piRoutes);
 app.use('/api/aws', awsConfigRoutes);
 app.use('/api/clean-all', cleanRoutes);
+app.use('/api/webhook', webhookRoutes);
+
+// Initialize Telegram bot + automation if configured
+if (telegram.isConfigured()) {
+  telegram.init();
+  initCallbackHandler();
+  console.log('Telegram automation enabled');
+}
 
 // Serve built client in production
 const clientDist = join(__dirname, '../client/dist');

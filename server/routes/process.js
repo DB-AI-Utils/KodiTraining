@@ -72,6 +72,11 @@ router.post('/process', async (req, res) => {
     const { config = {}, cloud = false } = req.body;
     const { concatenateFirst = false } = config;
 
+    const { isAutomationBusy } = await import('../services/automation.js');
+    if (isAutomationBusy()) {
+      return res.status(409).json({ error: 'Automated processing is in progress. Please wait.' });
+    }
+
     // Validate that we have an order set
     if (videoOrder.a.length === 0 || videoOrder.b.length === 0) {
       return res.status(400).json({

@@ -36,12 +36,13 @@ function invalidateConfigCache() {
   configCache = null;
 }
 
-async function piFetch(path, { timeout = 10_000 } = {}) {
+async function piFetch(path, { timeout = 10_000, ...fetchOpts } = {}) {
   const config = await piConfig();
   if (!config) throw new Error('Pi not configured');
 
   const url = `${config.url}${path}`;
-  const options = timeout ? { signal: AbortSignal.timeout(timeout) } : {};
+  const options = { ...fetchOpts };
+  if (timeout) options.signal = AbortSignal.timeout(timeout);
   const res = await fetch(url, options);
 
   if (!res.ok) {
