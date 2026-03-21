@@ -8,7 +8,7 @@ const __dirname = dirname(fileURLToPath(import.meta.url));
 const FINAL_PATH = join(__dirname, '../../output/final.mp4');
 import { setVideoOrder, processCloud, jobs } from '../routes/process.js';
 import * as telegram from './telegram.js';
-import { getPresignedDownloadUrl } from './cloud.js';
+import { getPresignedDownloadUrl, deleteJobFiles } from './cloud.js';
 
 const MIN_DURATION = (parseInt(process.env.MIN_SESSION_DURATION, 10) || 30) * 60;
 
@@ -172,7 +172,6 @@ export async function handleApproval(sessionId) {
     setVideoOrder({ a: orderA, b: orderB });
 
     session.status = 'processing';
-    await telegram.sendProgress(session.telegramMessageId, '⏳ <b>Processing in cloud...</b>');
 
     const processJobId = uuidv4();
     session.processJobId = processJobId;
@@ -191,7 +190,33 @@ export async function handleApproval(sessionId) {
       phase: 'Uploading to cloud...',
     });
 
-    await processCloud(processJobId, { a: orderA, b: orderB }, config);
+    // Poll job progress and send updates to Telegram
+    let lastReportedProgress = -1;
+    let lastReportedPhase = '';
+    const progressInterval = setInterval(async () => {
+      const job = jobs.get(processJobId);
+      if (!job || job.status === 'done' || job.status === 'error') return;
+
+      const progress = job.progress || 0;
+      const phase = job.phase || 'Processing...';
+      const phaseChanged = phase !== lastReportedPhase;
+      const progressJumped = progress - lastReportedProgress >= 5;
+
+      if (phaseChanged || progressJumped) {
+        lastReportedProgress = progress;
+        lastReportedPhase = phase;
+        await telegram.sendProgress(
+          session.telegramMessageId,
+          `⏳ <b>${phase}</b> ${progress}%`
+        );
+      }
+    }, 8000);
+
+    try {
+      await processCloud(processJobId, { a: orderA, b: orderB }, config);
+    } finally {
+      clearInterval(progressInterval);
+    }
 
     const job = jobs.get(processJobId);
     if (!job || job.status !== 'done') {
@@ -200,24 +225,43 @@ export async function handleApproval(sessionId) {
 
     session.status = 'done';
 
+    const duration = formatDuration(getSessionDuration(session));
+    let size = 'unknown';
+    try {
+      const stat = await fs.stat(FINAL_PATH);
+      size = formatSize(stat.size);
+    } catch { /* ignore */ }
+
+    // Try sending video directly via Telegram
+    if (telegram.isLocalApiConfigured()) {
+      try {
+        await telegram.sendProgress(session.telegramMessageId, '⏳ <b>Sending video to Telegram...</b>');
+        const caption = `🎬 <b>Training Session</b>\n⏱ ${duration} | 💾 ${size}`;
+        await telegram.sendVideo(FINAL_PATH, caption);
+
+        // Auto-cleanup all files
+        await cleanupSessionFiles(session);
+
+        await telegram.editMessage(
+          session.telegramMessageId,
+          `✅ <b>Processing Complete</b>\n\n⏱ Duration: ${duration}\n💾 Size: ${size}\n\n🗑 Source files cleaned up automatically.`
+        );
+        return;
+      } catch (err) {
+        console.error('[automation] Failed to send video via Telegram:', err.message);
+        // Fall through to presigned URL fallback
+      }
+    }
+
+    // Fallback: presigned URL with manual cleanup buttons
     let downloadUrl;
     try {
       downloadUrl = await getPresignedDownloadUrl(processJobId);
     } catch (err) {
       console.error('[automation] Failed to generate presigned URL:', err.message);
       await telegram.sendError(session.telegramMessageId, 'Processing complete but couldn\'t generate download link. Download via web UI.');
-      busy = false;
       return;
     }
-
-    const finalPath = FINAL_PATH;
-    let size = 'unknown';
-    try {
-      const stat = await fs.stat(finalPath);
-      size = formatSize(stat.size);
-    } catch { /* ignore */ }
-
-    const duration = formatDuration(getSessionDuration(session));
 
     await telegram.sendCompletion(session.telegramMessageId, {
       duration,
@@ -243,12 +287,7 @@ export async function handleRejection(sessionId) {
   await telegram.editMessage(session.telegramMessageId, '❌ <b>Skipped</b> — not processing this session.');
 }
 
-export async function handleDelete(sessionId) {
-  const session = sessions.get(sessionId);
-  if (!session) return;
-
-  await telegram.editMessage(session.telegramMessageId, '🗑 <b>Deleting source files...</b>');
-
+async function cleanupSessionFiles(session) {
   let piDeleted = 0;
   for (const filename of session.filenames) {
     try {
@@ -270,9 +309,28 @@ export async function handleDelete(sessionId) {
   }
 
   try {
-    const finalPath = FINAL_PATH;
-    await fs.unlink(finalPath);
+    await fs.unlink(FINAL_PATH);
   } catch { /* might not exist */ }
+
+  if (session.processJobId) {
+    try {
+      await deleteJobFiles(session.processJobId);
+    } catch (err) {
+      console.warn(`[automation] Failed to delete S3 job files: ${err.message}`);
+    }
+  }
+
+  console.log(`[automation] Cleanup: ${piDeleted} Pi files, ${localDeleted} local files, S3 job deleted`);
+  return { piDeleted, localDeleted };
+}
+
+export async function handleDelete(sessionId) {
+  const session = sessions.get(sessionId);
+  if (!session) return;
+
+  await telegram.editMessage(session.telegramMessageId, '🗑 <b>Deleting source files...</b>');
+
+  const { piDeleted, localDeleted } = await cleanupSessionFiles(session);
 
   await telegram.editMessage(
     session.telegramMessageId,
