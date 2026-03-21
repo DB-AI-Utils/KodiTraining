@@ -15,6 +15,14 @@ const MIN_DURATION = (parseInt(process.env.MIN_SESSION_DURATION, 10) || 30) * 60
 const sessions = new Map();
 let busy = false;
 
+function getSessionDuration(session) {
+  const cameraA = session.recordings.filter(r => r.camera === 'camera_a');
+  const cameraB = session.recordings.filter(r => r.camera === 'camera_b');
+  const durationA = cameraA.reduce((sum, r) => sum + (r.duration || 0), 0);
+  const durationB = cameraB.reduce((sum, r) => sum + (r.duration || 0), 0);
+  return Math.max(durationA, durationB);
+}
+
 export function isAutomationBusy() {
   return busy;
 }
@@ -209,9 +217,7 @@ export async function handleApproval(sessionId) {
       size = formatSize(stat.size);
     } catch { /* ignore */ }
 
-    const durationA = session.importedFiles.a.reduce((sum, f) => sum + (f.duration || 0), 0);
-    const durationB = session.importedFiles.b.reduce((sum, f) => sum + (f.duration || 0), 0);
-    const duration = formatDuration(Math.max(durationA, durationB));
+    const duration = formatDuration(getSessionDuration(session));
 
     await telegram.sendCompletion(session.telegramMessageId, {
       duration,
@@ -289,14 +295,11 @@ export async function handleNewLink(sessionId) {
     return;
   }
 
-  const durationA = session.importedFiles.a.reduce((sum, f) => sum + (f.duration || 0), 0);
-  const durationB = session.importedFiles.b.reduce((sum, f) => sum + (f.duration || 0), 0);
-  const duration = formatDuration(Math.max(durationA, durationB));
+  const duration = formatDuration(getSessionDuration(session));
 
   let size = 'unknown';
   try {
-    const finalPath = FINAL_PATH;
-    const stat = await fs.stat(finalPath);
+    const stat = await fs.stat(FINAL_PATH);
     size = formatSize(stat.size);
   } catch { /* ignore */ }
 
