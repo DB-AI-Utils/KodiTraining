@@ -317,6 +317,15 @@ export function initCallbackHandler() {
     if (!data) return;
 
     const [action, sessionId] = data.split(':');
+    console.log(`[automation] Callback: ${action} for session ${sessionId}`);
+
+    if (!sessions.has(sessionId) && action !== 'approve') {
+      await telegram.editMessage(
+        query.message?.message_id,
+        '⚠️ Session expired (server restarted). Use the web UI to clean up files.'
+      );
+      return;
+    }
 
     switch (action) {
       case 'approve':
