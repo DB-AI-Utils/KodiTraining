@@ -7,9 +7,10 @@ services:
       --local
       --http-port=8081
       --dir=/data
+    env_file:
+      - .env
     volumes:
       - telegram-bot-api-data:/data
-      - ./output:/output:ro
     restart: unless-stopped
 
   kodi-training:
@@ -27,10 +28,6 @@ services:
       - ./pi-config.json:/app/pi-config.json
     env_file:
       - .env
-    environment:
-      - TELEGRAM_API_URL=http://telegram-bot-api:8081
-    depends_on:
-      - telegram-bot-api
     restart: unless-stopped
 
 volumes:

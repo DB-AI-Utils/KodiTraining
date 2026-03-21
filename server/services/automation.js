@@ -193,28 +193,35 @@ export async function handleApproval(sessionId) {
     // Poll job progress and send updates to Telegram
     let lastReportedProgress = -1;
     let lastReportedPhase = '';
+    let progressCancelled = false;
     const progressInterval = setInterval(async () => {
-      const job = jobs.get(processJobId);
-      if (!job || job.status === 'done' || job.status === 'error') return;
+      if (progressCancelled) return;
+      try {
+        const job = jobs.get(processJobId);
+        if (!job || job.status === 'done' || job.status === 'error') return;
 
-      const progress = job.progress || 0;
-      const phase = job.phase || 'Processing...';
-      const phaseChanged = phase !== lastReportedPhase;
-      const progressJumped = progress - lastReportedProgress >= 5;
+        const progress = job.progress || 0;
+        const phase = job.phase || 'Processing...';
+        const phaseChanged = phase !== lastReportedPhase;
+        const progressJumped = progress - lastReportedProgress >= 5;
 
-      if (phaseChanged || progressJumped) {
-        lastReportedProgress = progress;
-        lastReportedPhase = phase;
-        await telegram.sendProgress(
-          session.telegramMessageId,
-          `⏳ <b>${phase}</b> ${progress}%`
-        );
+        if (!progressCancelled && (phaseChanged || progressJumped)) {
+          lastReportedProgress = progress;
+          lastReportedPhase = phase;
+          await telegram.sendProgress(
+            session.telegramMessageId,
+            `⏳ <b>${phase}</b> ${progress}%`
+          );
+        }
+      } catch (err) {
+        console.warn('[automation] Progress update failed:', err.message);
       }
     }, 8000);
 
     try {
       await processCloud(processJobId, { a: orderA, b: orderB }, config);
     } finally {
+      progressCancelled = true;
       clearInterval(progressInterval);
     }
 
@@ -237,10 +244,17 @@ export async function handleApproval(sessionId) {
       try {
         await telegram.sendProgress(session.telegramMessageId, '⏳ <b>Sending video to Telegram...</b>');
         const caption = `🎬 <b>Training Session</b>\n⏱ ${duration} | 💾 ${size}`;
-        await telegram.sendVideo(FINAL_PATH, caption);
+
+        const SEND_TIMEOUT = 30 * 60 * 1000;
+        const sendPromise = telegram.sendVideo(FINAL_PATH, caption);
+        const timeoutPromise = new Promise((_, reject) =>
+          setTimeout(() => reject(new Error('Video send timed out after 30 minutes')), SEND_TIMEOUT)
+        );
+        await Promise.race([sendPromise, timeoutPromise]);
 
         // Auto-cleanup all files
         await cleanupSessionFiles(session);
+        sessions.delete(sessionId);
 
         await telegram.editMessage(
           session.telegramMessageId,
