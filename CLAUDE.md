@@ -73,7 +73,7 @@ TELEGRAM_CHAT_ID=<chat-id>             # Required if bot token is set
 MIN_SESSION_DURATION=30                 # Minutes, sessions shorter than this are skipped
 TELEGRAM_API_ID=<id>                   # Optional: enables local Bot API for direct video sending
 TELEGRAM_API_HASH=<hash>               # Required if API ID is set. Get both from https://my.telegram.org
-TELEGRAM_API_URL=http://localhost:8082          # Required if API ID is set. Points to local Bot API (port 8082, 8081 taken by nginx)
+TELEGRAM_API_URL=http://localhost:8082          # Required if API ID is set. Points to local Bot API container
 ```
 
 ## FFmpeg Processing Modes
