@@ -12,8 +12,10 @@ services:
       --api-id=${TELEGRAM_API_ID}
       --api-hash=${TELEGRAM_API_HASH}
       --local
-      --http-port=8081
+      --http-port=8082
       --dir=/data
+    ports:
+      - "8082:8082"
     env_file:
       - .env
     volumes:
