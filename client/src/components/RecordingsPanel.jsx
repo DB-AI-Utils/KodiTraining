@@ -354,7 +354,7 @@ function RecordingsPanel({ onImportComplete, resetKey }) {
               <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 10 }}>
                 <button
                   className="pi-config-btn"
-                  style={isRecording ? { background: '#dc3545' } : {}}
+                  style={isRecording ? { background: '#dc3545', color: 'white', borderColor: '#dc3545' } : {}}
                   onClick={isRecording ? handleStopRecording : handleStartRecording}
                   disabled={actionPending}
                 >
@@ -405,7 +405,7 @@ function RecordingsPanel({ onImportComplete, resetKey }) {
                 <button
                   className="pi-refresh-btn"
                   onClick={loadRecordings}
-                  disabled={loadingRecordings || importing}
+                  disabled={loadingRecordings || importing || deleting}
                 >
                   {loadingRecordings ? 'Loading...' : 'Refresh'}
                 </button>

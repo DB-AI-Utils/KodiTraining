@@ -742,9 +742,9 @@
 }
 
 .pi-config-btn {
-  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-  color: white;
-  border: none;
+  background: white;
+  color: #28a745;
+  border: 1.5px solid #28a745;
   padding: 10px 24px;
   font-size: 0.95rem;
   border-radius: 6px;
@@ -755,8 +755,8 @@
 }
 
 .pi-config-btn:hover:not(:disabled) {
-  transform: translateY(-1px);
-  box-shadow: 0 3px 10px rgba(102, 126, 234, 0.3);
+  background: #28a745;
+  color: white;
 }
 
 .pi-config-btn:disabled {
