@@ -19,6 +19,9 @@ RUN npm install --production
 
 RUN apk add --no-cache procps
 
+ARG BUILD_COMMIT=unknown
+ENV BUILD_COMMIT=$BUILD_COMMIT
+
 COPY server/ ./server/
 COPY --from=builder /app/client/dist ./client/dist
 

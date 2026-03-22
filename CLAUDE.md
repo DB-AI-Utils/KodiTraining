@@ -48,10 +48,12 @@ aws cloudformation wait stack-create-complete --stack-name kodi-training --profi
 AWS_PROFILE=kodi bash infra/deploy-image.sh eu-north-1 kodi-training
 ```
 
-## Pi Deployment (Docker)
+## Pi Deployment
+
+Deployments to Raspberry Pi run via GitHub Actions (`deploy-pi.yml`, manual trigger). The workflow builds an ARM64 image, pushes to GHCR, then SSHes into the Pi (via DO jump host) to pull and restart the container. The git commit SHA is baked into the image as `BUILD_COMMIT` and sent via Telegram on startup.
 
 ```bash
-# On Raspberry Pi — requires .env, aws-config.json, go2rtc.yaml in project root
+# Manual local build (rare) — requires .env, aws-config.json, go2rtc.yaml in project root
 docker compose -f docker-compose.pi.yml up -d --build
 
 # Rebuild after code changes

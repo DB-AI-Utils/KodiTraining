@@ -25,6 +25,8 @@ services:
     build:
       context: .
       dockerfile: Dockerfile.app
+      args:
+        BUILD_COMMIT: ${BUILD_COMMIT:-unknown}
     network_mode: host
     depends_on:
       - go2rtc

@@ -33,6 +33,9 @@ if (telegram.isConfigured()) {
   telegram.init();
   initCallbackHandler();
   console.log('Telegram automation enabled');
+
+  const commit = process.env.BUILD_COMMIT || 'unknown';
+  telegram.sendMessage(`🚀 <b>KodiTraining started</b>\nCommit: <code>${commit}</code>`);
 }
 
 // Initialize recording services if RTSP is configured (Pi deployment)

@@ -43,6 +43,7 @@ jobs:
           file: Dockerfile.app
           platforms: linux/arm64
           push: true
+          build-args: BUILD_COMMIT=${{ github.sha }}
           tags: |
             ${{ steps.image.outputs.name }}:${{ github.sha }}
             ${{ steps.image.outputs.name }}:latest
