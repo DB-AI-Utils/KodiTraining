@@ -988,6 +988,16 @@
   opacity: 0.6;
 }
 
+.pi-delete-btn {
+  background: linear-gradient(135deg, #dc3545 0%, #a71d2a 100%);
+  flex: 0 !important;
+  white-space: nowrap;
+}
+
+.pi-delete-btn:hover:not(:disabled) {
+  box-shadow: 0 4px 12px rgba(220, 53, 69, 0.4);
+}
+
 .pi-unreachable {
   text-align: center;
   color: #c33;

@@ -7,6 +7,7 @@ import {
   setAutoRecord,
   importRecordings,
   getImportStatus,
+  deleteRecording,
 } from '../api.js'
 
 function formatSize(bytes) {
@@ -70,6 +71,7 @@ function RecordingsPanel({ onImportComplete, resetKey }) {
   const [selected, setSelected] = useState(new Set())
   const [importing, setImporting] = useState(false)
   const [importProgress, setImportProgress] = useState(0)
+  const [deleting, setDeleting] = useState(false)
   const [expanded, setExpanded] = useState(false)
   const [error, setError] = useState(null)
   const [successMsg, setSuccessMsg] = useState(null)
@@ -265,6 +267,34 @@ function RecordingsPanel({ onImportComplete, resetKey }) {
     }
   }
 
+  const handleDeleteSelected = async () => {
+    if (selected.size === 0 || deleting) return
+    if (!confirm(`Delete ${selected.size} recording${selected.size !== 1 ? 's' : ''}?`)) return
+    setDeleting(true)
+    setError(null)
+    try {
+      const errors = []
+      for (const filename of selected) {
+        try {
+          await deleteRecording(filename)
+        } catch (err) {
+          errors.push(`${filename}: ${err.message}`)
+        }
+      }
+      if (errors.length > 0) {
+        setError(`Failed to delete: ${errors.join(', ')}`)
+        clearError()
+      } else {
+        setSuccessMsg(`Deleted ${selected.size} file${selected.size !== 1 ? 's' : ''}`)
+        setTimeout(() => setSuccessMsg(null), 5000)
+      }
+      setSelected(new Set())
+      await loadRecordings()
+    } finally {
+      setDeleting(false)
+    }
+  }
+
   useEffect(() => {
     if (!expanded && importIntervalRef.current) {
       clearInterval(importIntervalRef.current)
@@ -449,16 +479,26 @@ function RecordingsPanel({ onImportComplete, resetKey }) {
                 </div>
               )}
 
-              <button
-                className="pi-import-btn"
-                onClick={handleImport}
-                disabled={selected.size === 0 || importing}
-              >
-                {importing
-                  ? `Importing... ${importProgress}%`
-                  : `Import Selected (${selected.size} file${selected.size !== 1 ? 's' : ''}, ${formatSize(totalSelectedSize)})`
-                }
-              </button>
+              <div style={{ display: 'flex', gap: 8 }}>
+                <button
+                  className="pi-import-btn"
+                  style={{ flex: 1 }}
+                  onClick={handleImport}
+                  disabled={selected.size === 0 || importing || deleting}
+                >
+                  {importing
+                    ? `Importing... ${importProgress}%`
+                    : `Import Selected (${selected.size} file${selected.size !== 1 ? 's' : ''}, ${formatSize(totalSelectedSize)})`
+                  }
+                </button>
+                <button
+                  className="pi-import-btn pi-delete-btn"
+                  onClick={handleDeleteSelected}
+                  disabled={selected.size === 0 || importing || deleting}
+                >
+                  {deleting ? 'Deleting...' : 'Delete Selected'}
+                </button>
+              </div>
             </>
           )}
 

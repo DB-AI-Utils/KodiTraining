@@ -197,6 +197,17 @@ export async function getRecordings() {
   return response.json();
 }
 
+export async function deleteRecording(filename) {
+  const response = await fetch(`/api/recording/recordings/${encodeURIComponent(filename)}`, {
+    method: 'DELETE',
+  });
+  if (!response.ok) {
+    const error = await response.json();
+    throw new Error(error.error || 'Failed to delete recording');
+  }
+  return response.json();
+}
+
 export async function importRecordings(filenames) {
   const response = await fetch('/api/recording/import', {
     method: 'POST',
