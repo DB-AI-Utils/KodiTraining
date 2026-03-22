@@ -258,13 +258,19 @@ export async function handleApproval(sessionId) {
 
         await telegram.editMessage(
           session.telegramMessageId,
+          '✅ <b>Processing Complete</b>'
+        );
+        const completionMsg = await telegram.sendMessage(
           `✅ <b>Processing Complete</b>\n\n⏱ Duration: ${duration}\n💾 Size: ${size}`,
           {
-            inline_keyboard: [[
-              { text: '🗑 Delete recordings', callback_data: `delete:${sessionId}` },
-            ]],
+            reply_markup: {
+              inline_keyboard: [[
+                { text: '🗑 Delete recordings', callback_data: `delete:${sessionId}` },
+              ]],
+            },
           }
         );
+        if (completionMsg) session.telegramMessageId = completionMsg.message_id;
         return;
       } catch (err) {
         console.error('[automation] Failed to send video via Telegram:', err.message);
@@ -282,12 +288,13 @@ export async function handleApproval(sessionId) {
       return;
     }
 
-    await telegram.sendCompletion(session.telegramMessageId, {
+    const completionMsg = await telegram.sendCompletion(session.telegramMessageId, {
       duration,
       size,
       downloadUrl,
       sessionId,
     });
+    if (completionMsg) session.telegramMessageId = completionMsg.message_id;
 
   } catch (err) {
     console.error('[automation] Processing failed:', err.message);
@@ -386,12 +393,13 @@ export async function handleNewLink(sessionId) {
     size = formatSize(stat.size);
   } catch { /* ignore */ }
 
-  await telegram.sendCompletion(session.telegramMessageId, {
+  const completionMsg = await telegram.sendCompletion(session.telegramMessageId, {
     duration,
     size,
     downloadUrl,
     sessionId,
   });
+  if (completionMsg) session.telegramMessageId = completionMsg.message_id;
 }
 
 export function initCallbackHandler() {

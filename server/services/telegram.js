@@ -94,7 +94,9 @@ export async function sendProgress(messageId, text) {
 }
 
 export async function sendCompletion(messageId, { duration, size, downloadUrl, sessionId }) {
-  if (!bot) return;
+  if (!bot) return null;
+
+  await editMessage(messageId, '✅ <b>Processing Complete</b>');
 
   const text = [
     `✅ <b>Processing Complete</b>`,
@@ -106,9 +108,7 @@ export async function sendCompletion(messageId, { duration, size, downloadUrl, s
     downloadUrl,
   ].join('\n');
 
-  await bot.editMessageText(text, {
-    chat_id: CHAT_ID,
-    message_id: messageId,
+  return bot.sendMessage(CHAT_ID, text, {
     parse_mode: 'HTML',
     reply_markup: {
       inline_keyboard: [[
@@ -163,9 +163,9 @@ export async function editMessage(messageId, text, replyMarkup) {
   }
 }
 
-export async function sendMessage(text) {
+export async function sendMessage(text, opts = {}) {
   if (!bot) return null;
-  return bot.sendMessage(CHAT_ID, text, { parse_mode: 'HTML' });
+  return bot.sendMessage(CHAT_ID, text, { parse_mode: 'HTML', ...opts });
 }
 
 export async function sendVideo(filePath, caption) {
