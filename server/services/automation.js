@@ -9,7 +9,7 @@ const __dirname = dirname(fileURLToPath(import.meta.url));
 const FINAL_PATH = join(__dirname, '../../output/final.mp4');
 import { setVideoOrder, processCloud, jobs } from '../routes/process.js';
 import * as telegram from './telegram.js';
-import { getPresignedDownloadUrl, deleteJobFiles } from './cloud.js';
+import { getPresignedDownloadUrl, deleteAllJobs } from './cloud.js';
 
 const MIN_DURATION = (parseInt(process.env.MIN_SESSION_DURATION, 10) || 30) * 60;
 
@@ -248,12 +248,17 @@ export async function handleApproval(sessionId) {
 
         const SEND_TIMEOUT = 30 * 60 * 1000;
         const sendPromise = telegram.sendVideo(FINAL_PATH, caption);
-        const timeoutPromise = new Promise((_, reject) =>
-          setTimeout(() => reject(new Error('Video send timed out after 30 minutes')), SEND_TIMEOUT)
-        );
-        await Promise.race([sendPromise, timeoutPromise]);
+        let timeoutId;
+        const timeoutPromise = new Promise((_, reject) => {
+          timeoutId = setTimeout(() => reject(new Error('Video send timed out after 30 minutes')), SEND_TIMEOUT);
+        });
+        try {
+          await Promise.race([sendPromise, timeoutPromise]);
+        } finally {
+          clearTimeout(timeoutId);
+        }
 
-        // Auto-cleanup local files and S3 (not Pi recordings)
+        // Cleanup local files (S3 kept until /cleanupaws)
         await cleanupLocalAndS3(session);
 
         await telegram.editMessage(
@@ -271,6 +276,17 @@ export async function handleApproval(sessionId) {
           }
         );
         if (completionMsg) session.telegramMessageId = completionMsg.message_id;
+
+        // Send separate message with direct S3 download link
+        try {
+          const downloadUrl = await getPresignedDownloadUrl(session.processJobId);
+          await telegram.sendMessage(
+            `📥 <b>Direct Download</b> (expires in 1 hour):\n${downloadUrl}`
+          );
+        } catch (err) {
+          console.warn('[automation] Failed to generate download link:', err.message);
+        }
+
         return;
       } catch (err) {
         console.error('[automation] Failed to send video via Telegram:', err.message);
@@ -328,15 +344,7 @@ async function cleanupLocalAndS3(session) {
     await fs.unlink(FINAL_PATH);
   } catch { /* might not exist */ }
 
-  if (session.processJobId) {
-    try {
-      await deleteJobFiles(session.processJobId);
-    } catch (err) {
-      console.warn(`[automation] Failed to delete S3 job files: ${err.message}`);
-    }
-  }
-
-  console.log(`[automation] Cleanup: ${localDeleted} local files, S3 job deleted`);
+  console.log(`[automation] Cleanup: ${localDeleted} local files deleted (S3 kept)`);
   return { localDeleted };
 }
 
@@ -402,7 +410,97 @@ export async function handleNewLink(sessionId) {
   if (completionMsg) session.telegramMessageId = completionMsg.message_id;
 }
 
+async function handleReprocess() {
+  if (busy) {
+    await telegram.sendMessage('⚠️ Automation is busy. Try again later.');
+    return;
+  }
+
+  for (const job of jobs.values()) {
+    if (['processing', 'uploading', 'cloud-processing', 'downloading'].includes(job.status)) {
+      await telegram.sendMessage('⚠️ A manual job is running. Try again later.');
+      return;
+    }
+  }
+
+  let recordings;
+  try {
+    recordings = await recorder.listRecordings();
+  } catch (err) {
+    await telegram.sendMessage(`⚠️ Couldn't fetch recordings: ${err.message}`);
+    return;
+  }
+
+  const allSessions = groupRecordingsIntoSessions(recordings);
+  if (allSessions.length === 0) {
+    await telegram.sendMessage('⚠️ No recording sessions found.');
+    return;
+  }
+
+  const session = allSessions[allSessions.length - 1];
+  const cameraA = session.recordings.filter(r => r.camera === 'camera_a');
+  const cameraB = session.recordings.filter(r => r.camera === 'camera_b');
+
+  if (cameraA.length === 0 || cameraB.length === 0) {
+    await telegram.sendMessage('⚠️ Last session is missing recordings from one camera.');
+    return;
+  }
+
+  const durationA = cameraA.reduce((sum, r) => sum + (r.duration || 0), 0);
+  const durationB = cameraB.reduce((sum, r) => sum + (r.duration || 0), 0);
+  const sizeA = cameraA.reduce((sum, r) => sum + (r.size || 0), 0);
+  const sizeB = cameraB.reduce((sum, r) => sum + (r.size || 0), 0);
+
+  const sessionId = uuidv4();
+  const sessionState = {
+    sessionId,
+    status: 'pending_approval',
+    telegramMessageId: null,
+    processJobId: null,
+    recordings: session.recordings,
+    filenames: session.recordings.map(r => r.filename),
+    importedFiles: { a: [], b: [] },
+    date: formatDate(session.startTime),
+    timeRange: `${formatTime(session.startTime)} – ${formatTime(session.endTime)}`,
+  };
+  sessions.set(sessionId, sessionState);
+
+  const msg = await telegram.sendMessage(
+    `🔄 <b>Reprocessing Last Session</b>\n\n` +
+    `📅 ${sessionState.date}, ${sessionState.timeRange}\n` +
+    `📹 Camera A: ${cameraA.length} segments, ${formatDuration(durationA)}, ${formatSize(sizeA)}\n` +
+    `📹 Camera B: ${cameraB.length} segments, ${formatDuration(durationB)}, ${formatSize(sizeB)}\n\n` +
+    `⏳ Starting...`
+  );
+  if (msg) sessionState.telegramMessageId = msg.message_id;
+
+  await handleApproval(sessionId);
+}
+
+async function handleCleanupAws() {
+  if (busy) {
+    await telegram.sendMessage('⚠️ Cannot clean AWS while processing is active.');
+    return;
+  }
+
+  try {
+    await telegram.sendMessage('🗑 <b>Cleaning up all AWS job files...</b>');
+    await deleteAllJobs();
+    await telegram.sendMessage('✅ <b>All AWS job files deleted.</b>');
+  } catch (err) {
+    await telegram.sendMessage(`❌ <b>Cleanup failed:</b> ${err.message}`);
+  }
+}
+
 export function initCallbackHandler() {
+  telegram.onCommand('reprocess', async () => {
+    await handleReprocess();
+  });
+
+  telegram.onCommand('cleanupaws', async () => {
+    await handleCleanupAws();
+  });
+
   telegram.onCallback(async (query) => {
     const data = query.data;
     if (!data) return;

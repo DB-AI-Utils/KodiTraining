@@ -168,6 +168,16 @@ export async function sendMessage(text, opts = {}) {
   return bot.sendMessage(CHAT_ID, text, { parse_mode: 'HTML', ...opts });
 }
 
+export function onCommand(command, handler) {
+  if (!bot) return;
+  bot.onText(new RegExp(`^\\/${command}$`), (msg) => {
+    if (msg.chat.id.toString() !== CHAT_ID) return;
+    handler(msg).catch(err => {
+      console.error(`[telegram] Command /${command} error:`, err.message);
+    });
+  });
+}
+
 export async function sendVideo(filePath, caption) {
   if (!bot) throw new Error('Bot not initialized');
 
