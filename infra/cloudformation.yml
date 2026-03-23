@@ -80,8 +80,8 @@ Resources:
       RequiresCompatibilities:
         - FARGATE
       NetworkMode: awsvpc
-      Cpu: '4096'
-      Memory: '8192'
+      Cpu: '8192'
+      Memory: '16384'
       RuntimePlatform:
         CpuArchitecture: ARM64
         OperatingSystemFamily: LINUX
