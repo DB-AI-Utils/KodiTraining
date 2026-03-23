@@ -12,7 +12,7 @@ import { setVideoOrder, processCloud, jobs } from '../routes/process.js';
 import * as telegram from './telegram.js';
 import { getPresignedDownloadUrl, deleteAllJobs, stopTask } from './cloud.js';
 
-const MIN_DURATION = (parseInt(process.env.MIN_SESSION_DURATION, 10) || 30) * 60;
+
 
 const sessions = new Map();
 let busy = false;
@@ -96,10 +96,6 @@ export async function handleRecordingStopped(payload) {
   const durationB = cameraB.reduce((sum, r) => sum + (r.duration || 0), 0);
   const maxDuration = Math.max(durationA, durationB);
 
-  if (maxDuration < MIN_DURATION) {
-    console.log(`[automation] Session duration ${formatDuration(maxDuration)} below threshold ${formatDuration(MIN_DURATION)}, skipping`);
-    return;
-  }
 
   const sizeA = cameraA.reduce((sum, r) => sum + (r.size || 0), 0);
   const sizeB = cameraB.reduce((sum, r) => sum + (r.size || 0), 0);

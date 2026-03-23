@@ -45,7 +45,6 @@ services:
       TELEGRAM_BOT_TOKEN: ${TELEGRAM_BOT_TOKEN}
       TELEGRAM_CHAT_ID: ${TELEGRAM_CHAT_ID}
       TELEGRAM_API_URL: http://localhost:8082
-      MIN_SESSION_DURATION: "30"
       RTSP_BASE: rtsp://localhost:8554
       GO2RTC_API: http://localhost:1984
       RECORDINGS_DIR: ./recordings
