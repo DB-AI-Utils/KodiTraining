@@ -178,7 +178,7 @@ export function onCommand(command, handler) {
   });
 }
 
-export async function sendVideo(filePath, caption, { width, height } = {}) {
+export async function sendVideo(filePath, caption, { width, height, duration } = {}) {
   if (!bot) throw new Error('Bot not initialized');
 
   const opts = {
@@ -188,6 +188,7 @@ export async function sendVideo(filePath, caption, { width, height } = {}) {
   };
   if (width) opts.width = width;
   if (height) opts.height = height;
+  if (duration) opts.duration = Math.round(duration);
 
   return bot.sendVideo(CHAT_ID, createReadStream(filePath), opts);
 }

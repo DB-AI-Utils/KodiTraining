@@ -4,7 +4,7 @@ import { join, dirname } from 'path';
 import { fileURLToPath } from 'url';
 import * as recorder from './recorder.js';
 import { groupRecordingsIntoSessions, processImport, importJobs } from './import.js';
-import { getVideoDimensions } from './ffmpeg.js';
+import { getVideoDimensions, getVideoDuration } from './ffmpeg.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const FINAL_PATH = join(__dirname, '../../output/final.mp4');
@@ -247,15 +247,19 @@ export async function handleApproval(sessionId) {
         await telegram.sendProgress(session.telegramMessageId, '⏳ <b>Sending video to Telegram...</b>');
         const caption = `🎬 <b>Training Session</b>\n📅 ${session.date}, ${session.timeRange}\n⏱ ${duration} | 💾 ${size}`;
 
-        let videoDims = {};
+        let videoMeta = {};
         try {
-          videoDims = await getVideoDimensions(FINAL_PATH);
+          const [dims, dur] = await Promise.all([
+            getVideoDimensions(FINAL_PATH),
+            getVideoDuration(FINAL_PATH),
+          ]);
+          videoMeta = { ...dims, duration: dur };
         } catch (err) {
-          console.warn('[automation] Could not probe video dimensions:', err.message);
+          console.warn('[automation] Could not probe video metadata:', err.message);
         }
 
         const SEND_TIMEOUT = 30 * 60 * 1000;
-        const sendPromise = telegram.sendVideo(FINAL_PATH, caption, videoDims);
+        const sendPromise = telegram.sendVideo(FINAL_PATH, caption, videoMeta);
         let timeoutId;
         const timeoutPromise = new Promise((_, reject) => {
           timeoutId = setTimeout(() => reject(new Error('Video send timed out after 30 minutes')), SEND_TIMEOUT);
