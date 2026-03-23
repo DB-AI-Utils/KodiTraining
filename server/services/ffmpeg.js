@@ -322,6 +322,25 @@ export function getVideoDuration(videoPath) {
   });
 }
 
+export function getVideoDimensions(videoPath) {
+  return new Promise((resolve, reject) => {
+    ffmpeg.ffprobe(videoPath, (err, metadata) => {
+      if (err) {
+        reject(new Error(`Failed to get video dimensions: ${err.message}`));
+        return;
+      }
+
+      const videoStream = metadata.streams.find(s => s.codec_type === 'video');
+      if (!videoStream) {
+        reject(new Error('No video stream found'));
+        return;
+      }
+
+      resolve({ width: videoStream.width, height: videoStream.height });
+    });
+  });
+}
+
 /**
  * Pad a video with cloned frames and silent audio
  * @param {string} inputPath - Path to input video

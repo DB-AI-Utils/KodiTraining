@@ -178,12 +178,16 @@ export function onCommand(command, handler) {
   });
 }
 
-export async function sendVideo(filePath, caption) {
+export async function sendVideo(filePath, caption, { width, height } = {}) {
   if (!bot) throw new Error('Bot not initialized');
 
-  return bot.sendVideo(CHAT_ID, createReadStream(filePath), {
+  const opts = {
     caption,
     parse_mode: 'HTML',
     supports_streaming: true,
-  });
+  };
+  if (width) opts.width = width;
+  if (height) opts.height = height;
+
+  return bot.sendVideo(CHAT_ID, createReadStream(filePath), opts);
 }
