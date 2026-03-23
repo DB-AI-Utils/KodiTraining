@@ -10,7 +10,7 @@ const __dirname = dirname(fileURLToPath(import.meta.url));
 const FINAL_PATH = join(__dirname, '../../output/final.mp4');
 import { setVideoOrder, processCloud, jobs } from '../routes/process.js';
 import * as telegram from './telegram.js';
-import { getPresignedDownloadUrl, deleteAllJobs } from './cloud.js';
+import { getPresignedDownloadUrl, deleteAllJobs, stopTask } from './cloud.js';
 
 const MIN_DURATION = (parseInt(process.env.MIN_SESSION_DURATION, 10) || 30) * 60;
 
@@ -489,6 +489,37 @@ async function handleReprocess() {
   await handleApproval(sessionId);
 }
 
+async function handleCancel() {
+  if (!busy) {
+    await telegram.sendMessage('ℹ️ No active processing to cancel.');
+    return;
+  }
+
+  // Find the active session with a taskArn
+  let activeSession = null;
+  for (const session of sessions.values()) {
+    if (session.status === 'processing' && session.processJobId) {
+      const job = jobs.get(session.processJobId);
+      if (job?.taskArn) {
+        activeSession = { session, job };
+        break;
+      }
+    }
+  }
+
+  if (!activeSession) {
+    await telegram.sendMessage('⚠️ Processing is active but no cloud task found to cancel.');
+    return;
+  }
+
+  try {
+    await stopTask(activeSession.job.taskArn);
+    await telegram.sendMessage('🛑 <b>Cancelling cloud processing task...</b>');
+  } catch (err) {
+    await telegram.sendMessage(`❌ <b>Failed to cancel:</b> ${err.message}`);
+  }
+}
+
 async function handleCleanupAws() {
   if (busy) {
     await telegram.sendMessage('⚠️ Cannot clean AWS while processing is active.');
@@ -507,6 +538,10 @@ async function handleCleanupAws() {
 export function initCallbackHandler() {
   telegram.onCommand('reprocess', async () => {
     await handleReprocess();
+  });
+
+  telegram.onCommand('cancel', async () => {
+    await handleCancel();
   });
 
   telegram.onCommand('cleanupaws', async () => {

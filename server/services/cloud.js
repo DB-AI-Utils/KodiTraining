@@ -6,7 +6,7 @@ import {
   DeleteObjectsCommand,
 } from '@aws-sdk/client-s3';
 import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
-import { ECSClient, RunTaskCommand, DescribeTasksCommand } from '@aws-sdk/client-ecs';
+import { ECSClient, RunTaskCommand, DescribeTasksCommand, StopTaskCommand } from '@aws-sdk/client-ecs';
 import { EC2Client, DescribeSubnetsCommand } from '@aws-sdk/client-ec2';
 import { promises as fs } from 'fs';
 import { join, dirname } from 'path';
@@ -198,6 +198,18 @@ export async function checkTaskStatus(taskArn) {
     stoppedReason: task.stoppedReason,
     exitCode: task.containers?.[0]?.exitCode,
   };
+}
+
+export async function stopTask(taskArn) {
+  const config = await getConfig();
+  if (!config) throw new Error('AWS not configured');
+
+  const ecs = getECSClient(config);
+  await ecs.send(new StopTaskCommand({
+    cluster: config.cluster,
+    task: taskArn,
+    reason: 'Cancelled by user',
+  }));
 }
 
 export async function downloadResult(jobId) {

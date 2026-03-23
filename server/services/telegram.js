@@ -4,6 +4,7 @@ import { createReadStream } from 'fs';
 const BOT_TOKEN = process.env.TELEGRAM_BOT_TOKEN;
 const CHAT_ID = process.env.TELEGRAM_CHAT_ID;
 const API_URL = process.env.TELEGRAM_API_URL;
+const ALLOWED_USER_ID = process.env.TELEGRAM_ALLOWED_USER_ID;
 
 let bot = null;
 let callbackHandler = null;
@@ -28,6 +29,7 @@ export function init() {
   bot = new TelegramBot(BOT_TOKEN, opts);
 
   bot.on('callback_query', async (query) => {
+    if (ALLOWED_USER_ID && query.from.id.toString() !== ALLOWED_USER_ID) return;
     try {
       await bot.answerCallbackQuery(query.id);
     } catch {
@@ -172,6 +174,7 @@ export function onCommand(command, handler) {
   if (!bot) return;
   bot.onText(new RegExp(`^\\/${command}$`), (msg) => {
     if (msg.chat.id.toString() !== CHAT_ID) return;
+    if (ALLOWED_USER_ID && msg.from.id.toString() !== ALLOWED_USER_ID) return;
     handler(msg).catch(err => {
       console.error(`[telegram] Command /${command} error:`, err.message);
     });
