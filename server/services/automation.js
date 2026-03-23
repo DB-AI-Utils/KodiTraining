@@ -289,16 +289,6 @@ export async function handleApproval(sessionId) {
         );
         if (completionMsg) session.telegramMessageId = completionMsg.message_id;
 
-        // Send separate message with direct S3 download link
-        try {
-          const downloadUrl = await getPresignedDownloadUrl(session.processJobId);
-          await telegram.sendMessage(
-            `📥 <b>Direct Download</b> (expires in 1 hour):\n${downloadUrl}`
-          );
-        } catch (err) {
-          console.warn('[automation] Failed to generate download link:', err.message);
-        }
-
         return;
       } catch (err) {
         console.error('[automation] Failed to send video via Telegram:', err.message);
@@ -520,6 +510,30 @@ async function handleCancel() {
   }
 }
 
+async function handleGetLink() {
+  // Find the latest completed session with a processJobId
+  let latest = null;
+  for (const session of sessions.values()) {
+    if (session.status === 'done' && session.processJobId) {
+      latest = session;
+    }
+  }
+
+  if (!latest) {
+    await telegram.sendMessage('⚠️ No completed job found. Process a video first.');
+    return;
+  }
+
+  try {
+    const downloadUrl = await getPresignedDownloadUrl(latest.processJobId);
+    await telegram.sendMessage(
+      `📥 <b>Direct Download</b> (expires in 1 hour):\n${downloadUrl}`
+    );
+  } catch (err) {
+    await telegram.sendMessage(`❌ <b>Failed to generate link:</b> ${err.message}`);
+  }
+}
+
 async function handleCleanupAws() {
   if (busy) {
     await telegram.sendMessage('⚠️ Cannot clean AWS while processing is active.');
@@ -538,6 +552,10 @@ async function handleCleanupAws() {
 export function initCallbackHandler() {
   telegram.onCommand('reprocess', async () => {
     await handleReprocess();
+  });
+
+  telegram.onCommand('getlink', async () => {
+    await handleGetLink();
   });
 
   telegram.onCommand('cancel', async () => {
