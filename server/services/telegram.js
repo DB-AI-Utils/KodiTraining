@@ -29,7 +29,7 @@ export function init() {
   bot = new TelegramBot(BOT_TOKEN, opts);
 
   bot.on('callback_query', async (query) => {
-    if (ALLOWED_USER_ID && query.from.id.toString() !== ALLOWED_USER_ID) return;
+    if (!ALLOWED_USER_ID || query.from.id.toString() !== ALLOWED_USER_ID) return;
     try {
       await bot.answerCallbackQuery(query.id);
     } catch {
@@ -174,7 +174,7 @@ export function onCommand(command, handler) {
   if (!bot) return;
   bot.onText(new RegExp(`^\\/${command}$`), (msg) => {
     if (msg.chat.id.toString() !== CHAT_ID) return;
-    if (ALLOWED_USER_ID && msg.from.id.toString() !== ALLOWED_USER_ID) return;
+    if (!ALLOWED_USER_ID || msg.from.id.toString() !== ALLOWED_USER_ID) return;
     handler(msg).catch(err => {
       console.error(`[telegram] Command /${command} error:`, err.message);
     });
