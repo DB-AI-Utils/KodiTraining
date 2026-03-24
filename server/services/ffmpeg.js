@@ -41,10 +41,11 @@ export function combinePair(videoA, videoB, outputPath, onProgress, config = {})
     command.input(videoB);
 
     // Apply complex filter for side-by-side layout with audio merge
-    // fps=30 normalizes VFR before hstack to prevent unbounded frame buffering
+    // setpts=N/(30*TB) rewrites timestamps by frame index, eliminating VFR
+    // discontinuities that cause unbounded downstream buffering in hstack
     const filterParts = [
-      '[0:v]fps=30,scale=-2:720,setsar=1[left]',
-      '[1:v]fps=30,scale=-2:720,setsar=1[right]',
+      '[0:v]setpts=N/(30*TB),scale=-2:720,setsar=1[left]',
+      '[1:v]setpts=N/(30*TB),scale=-2:720,setsar=1[right]',
       '[left][right]hstack=inputs=2[v]',
       '[0:a][1:a]amerge=inputs=2[a]'
     ];
