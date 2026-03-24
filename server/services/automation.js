@@ -313,6 +313,9 @@ export async function handleApproval(sessionId) {
   } catch (err) {
     console.error('[automation] Processing failed:', err.message);
     session.status = 'failed';
+    if (session.processJobId) {
+      jobs.set(session.processJobId, { progress: 0, status: 'error', error: err.message, cloud: true });
+    }
     await telegram.sendError(session.telegramMessageId, err.message);
   } finally {
     busy = false;
