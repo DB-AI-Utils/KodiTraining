@@ -176,7 +176,7 @@ export async function handleApproval(sessionId) {
 
     const config = {
       crf: 35,
-      preset: 'slower',
+      preset: 'slow',
       concatenateFirst: true,
       audioBitrate: '96k',
     };

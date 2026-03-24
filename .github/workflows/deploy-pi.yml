@@ -111,6 +111,9 @@ jobs:
           export IMAGE_TAG=${{ steps.tag.outputs.tag }}
           export AWS_ACCESS_KEY_ID=${{ secrets.AWS_ACCESS_KEY_ID }}
           export AWS_SECRET_ACCESS_KEY=${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          export AWS_S3_BUCKET=${{ vars.AWS_S3_BUCKET }}
+          export AWS_ECS_CLUSTER=${{ vars.AWS_ECS_CLUSTER }}
+          export AWS_ECS_TASK_DEFINITION=${{ vars.AWS_ECS_TASK_DEFINITION }}
           export TELEGRAM_BOT_TOKEN=${{ secrets.TELEGRAM_BOT_TOKEN }}
           export TELEGRAM_CHAT_ID=${{ vars.TELEGRAM_CHAT_ID }}
           export TELEGRAM_API_ID=${{ secrets.TELEGRAM_API_ID }}

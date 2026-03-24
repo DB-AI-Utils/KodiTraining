@@ -19,8 +19,24 @@ const CONFIG_PATH = join(__dirname, '../../aws-config.json');
 
 let configCache = null;
 
-async function getConfig() {
+function getConfigFromEnv() {
+  const bucket = process.env.AWS_S3_BUCKET;
+  const cluster = process.env.AWS_ECS_CLUSTER;
+  const taskDefinition = process.env.AWS_ECS_TASK_DEFINITION;
+  const region = process.env.AWS_REGION;
+  if (bucket && region) {
+    return { bucket, cluster, taskDefinition, region };
+  }
+  return null;
+}
+
+export async function getConfig() {
   if (configCache) return configCache;
+  const envConfig = getConfigFromEnv();
+  if (envConfig) {
+    configCache = envConfig;
+    return configCache;
+  }
   try {
     const raw = await fs.readFile(CONFIG_PATH, 'utf-8');
     const config = JSON.parse(raw);

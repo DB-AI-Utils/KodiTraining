@@ -2,7 +2,7 @@ import express from 'express';
 import { promises as fs } from 'fs';
 import { join, dirname } from 'path';
 import { fileURLToPath } from 'url';
-import { invalidateConfigCache } from '../services/cloud.js';
+import { getConfig, invalidateConfigCache } from '../services/cloud.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const router = express.Router();
@@ -10,9 +10,12 @@ const CONFIG_PATH = join(__dirname, '../../aws-config.json');
 
 router.get('/config', async (req, res) => {
   try {
-    const raw = await fs.readFile(CONFIG_PATH, 'utf-8');
-    const config = JSON.parse(raw);
-    res.json({ ...config, configured: true });
+    const config = await getConfig();
+    if (config) {
+      res.json({ ...config, configured: true });
+    } else {
+      res.json({ configured: false });
+    }
   } catch {
     res.json({ configured: false });
   }

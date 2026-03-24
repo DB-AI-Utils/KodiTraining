@@ -36,12 +36,14 @@ services:
       - ./thumbnails:/app/thumbnails
       - ./recordings:/app/recordings
       - ./auto-record-config.json:/app/auto-record-config.json
-      - ./aws-config.json:/app/aws-config.json
     environment:
       PORT: "8086"
       AWS_ACCESS_KEY_ID: ${AWS_ACCESS_KEY_ID}
       AWS_SECRET_ACCESS_KEY: ${AWS_SECRET_ACCESS_KEY}
       AWS_REGION: eu-north-1
+      AWS_S3_BUCKET: ${AWS_S3_BUCKET}
+      AWS_ECS_CLUSTER: ${AWS_ECS_CLUSTER}
+      AWS_ECS_TASK_DEFINITION: ${AWS_ECS_TASK_DEFINITION}
       TELEGRAM_BOT_TOKEN: ${TELEGRAM_BOT_TOKEN}
       TELEGRAM_CHAT_ID: ${TELEGRAM_CHAT_ID}
       TELEGRAM_API_URL: http://localhost:8082
