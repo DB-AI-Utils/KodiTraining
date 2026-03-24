@@ -81,7 +81,7 @@ Resources:
         - FARGATE
       NetworkMode: awsvpc
       Cpu: '8192'
-      Memory: '32768'
+      Memory: '16384'
       RuntimePlatform:
         CpuArchitecture: ARM64
         OperatingSystemFamily: LINUX

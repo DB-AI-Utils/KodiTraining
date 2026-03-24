@@ -101,13 +101,13 @@ Original mode for when both cameras have matching segment counts and lengths. Un
 ## Key Implementation Details
 
 ### VFR (Variable Frame Rate) Handling
-The `combinePair` function in `server/services/ffmpeg.js` applies `-vsync cfr` at output. This is critical for Xiaomi cameras that record VFR, otherwise output timing is incorrect.
+The `combinePair` function in `server/services/ffmpeg.js` applies `fps=30` before `hstack` to normalize VFR inputs. This is critical for Xiaomi cameras that record VFR — without it, hstack's framesync buffers frames unboundedly, causing OOM on long videos.
 
 ### Cloud Processing
 - Toggle "Process in Cloud" in ConfigPanel (enabled by default when AWS configured)
 - Cloud flow: upload to S3 → ECS Fargate task → poll progress.json → download result
 - Progress phases: uploading (0-15%), processing (15-85%), downloading (85-100%)
-- Container runs on ARM64 Graviton (8 vCPU, 32 GB RAM), ~$0.09/job
+- Container runs on ARM64 Graviton (8 vCPU, 16 GB RAM), ~$0.08/job
 - Container reuses `server/services/ffmpeg.js` — same pipeline as local
 - S3 lifecycle rule auto-deletes job files after 7 days
 - "Clean All" also purges S3 job files

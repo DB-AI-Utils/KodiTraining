@@ -41,10 +41,10 @@ export function combinePair(videoA, videoB, outputPath, onProgress, config = {})
     command.input(videoB);
 
     // Apply complex filter for side-by-side layout with audio merge
-    // VFR normalization (-vsync cfr) happens at output, not in filter chain
+    // fps=30 normalizes VFR before hstack to prevent unbounded frame buffering
     const filterParts = [
-      '[0:v]scale=-2:720,setsar=1[left]',
-      '[1:v]scale=-2:720,setsar=1[right]',
+      '[0:v]fps=30,scale=-2:720,setsar=1[left]',
+      '[1:v]fps=30,scale=-2:720,setsar=1[right]',
       '[left][right]hstack=inputs=2[v]',
       '[0:a][1:a]amerge=inputs=2[a]'
     ];
@@ -61,7 +61,6 @@ export function combinePair(videoA, videoB, outputPath, onProgress, config = {})
       .outputOptions([
         '-map', '[v]',
         '-map', '[a]',
-        '-vsync', 'cfr',  // Normalize VFR from both cameras to constant frame rate
         '-c:v', 'libx264',
         '-preset', preset,
         '-crf', `${crf}`,
