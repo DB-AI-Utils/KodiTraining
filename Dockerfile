@@ -1,6 +1,8 @@
 FROM node:20-alpine
 
-RUN apk add --no-cache ffmpeg
+RUN apk add --no-cache ffmpeg mimalloc
+
+ENV LD_PRELOAD=/usr/lib/libmimalloc.so.2
 
 WORKDIR /app
 

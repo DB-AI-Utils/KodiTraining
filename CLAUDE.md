@@ -101,16 +101,24 @@ Original mode for when both cameras have matching segment counts and lengths. Un
 ## Key Implementation Details
 
 ### VFR (Variable Frame Rate) Handling
-The `combinePair` function in `server/services/ffmpeg.js` applies `fps=30` before `hstack` to normalize VFR inputs. This is critical for Xiaomi cameras that record VFR — without it, hstack's framesync buffers frames unboundedly, causing OOM on long videos.
+The `combinePair` function in `server/services/ffmpeg.js` applies `setpts=N/(30*TB)` before `hstack` to rewrite VFR timestamps by frame index. This is critical for Xiaomi cameras that record VFR — two problems occur without it:
+1. **hstack framesync buffering**: VFR PTS discontinuities cause unbounded downstream buffering, leading to OOM
+2. **musl allocator fragmentation**: Alpine Linux's musl libc fragments catastrophically under multithreaded libx264 (all threads contend on a single shared heap). The Fargate container uses `mimalloc` via `LD_PRELOAD` to replace musl's allocator.
+
+Both fixes are required — `setpts` alone or `mimalloc` alone still OOM. Known tradeoff: `setpts=N/(30*TB)` causes ~3-5s audio drift on 1-hour videos because it assumes exactly 30fps while cameras average ~29.96fps. `fps=30` preserves sync but causes OOM even with mimalloc.
 
 ### Cloud Processing
 - Toggle "Process in Cloud" in ConfigPanel (enabled by default when AWS configured)
 - Cloud flow: upload to S3 → ECS Fargate task → poll progress.json → download result
 - Progress phases: uploading (0-15%), processing (15-85%), downloading (85-100%)
 - Container runs on ARM64 Graviton (8 vCPU, 16 GB RAM), ~$0.08/job
-- Container reuses `server/services/ffmpeg.js` — same pipeline as local
+- Container uses `server/services/ffmpeg.js` — same FFmpeg pipeline as local, but packaged in a separate Docker image (`Dockerfile`) pushed to ECR
 - S3 lifecycle rule auto-deletes job files after 7 days
 - "Clean All" also purges S3 job files
+
+### Two Separate Deploy Processes
+- **Pi app** (`Dockerfile.app`): deployed via GitHub Actions `deploy-pi.yml`. Contains the web UI, Telegram bot, recording services. Pushes to GHCR.
+- **Fargate container** (`Dockerfile`): deployed manually with `AWS_PROFILE=kodi bash infra/deploy-image.sh`. Contains only FFmpeg + processing scripts. Pushes to ECR. **Changes to `server/services/ffmpeg.js` or `container/process.js` require rebuilding this image separately — Pi deploys do NOT update it.**
 
 ### Recording (Pi only, gated on `RTSP_BASE` env var)
 - **go2rtc** container handles Xiaomi camera RTSP streams (separate container, host networking)
@@ -179,7 +187,7 @@ Dockerfile              # FFmpeg container for ECS Fargate (ARM64)
 Dockerfile.app          # Full app container for Pi deployment (includes procps for orphan cleanup)
 docker-compose.pi.yml   # Pi deployment: go2rtc + telegram-bot-api + kodi-training (host networking)
 go2rtc.yaml.example     # Camera stream configuration template (copy to go2rtc.yaml)
-aws-config.json         # AWS resource ARNs — bucket, cluster, task def, region (gitignored)
+aws-config.json         # AWS resource ARNs — local dev only, Pi uses env vars (gitignored)
 ```
 
 ## System Requirements

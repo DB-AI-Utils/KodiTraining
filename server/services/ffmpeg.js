@@ -41,8 +41,7 @@ export function combinePair(videoA, videoB, outputPath, onProgress, config = {})
     command.input(videoB);
 
     // Apply complex filter for side-by-side layout with audio merge
-    // setpts=N/(30*TB) rewrites timestamps by frame index, eliminating VFR
-    // discontinuities that cause unbounded downstream buffering in hstack
+    // setpts=N/(30*TB) eliminates VFR timestamp discontinuities
     const filterParts = [
       '[0:v]setpts=N/(30*TB),scale=-2:720,setsar=1[left]',
       '[1:v]setpts=N/(30*TB),scale=-2:720,setsar=1[right]',
@@ -390,3 +389,4 @@ export function padVideo(inputPath, outputPath, paddingDuration, onProgress) {
     command.run();
   });
 }
+
