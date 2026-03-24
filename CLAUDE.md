@@ -101,11 +101,15 @@ Original mode for when both cameras have matching segment counts and lengths. Un
 ## Key Implementation Details
 
 ### VFR (Variable Frame Rate) Handling
-The `combinePair` function in `server/services/ffmpeg.js` applies `setpts=N/(30*TB)` before `hstack` to rewrite VFR timestamps by frame index. This is critical for Xiaomi cameras that record VFR — two problems occur without it:
+Xiaomi C400 cameras record VFR at ~20fps with PTS discontinuities (3s gaps at recording start, occasional mid-stream gaps). Two problems occur when combining VFR inputs with hstack:
 1. **hstack framesync buffering**: VFR PTS discontinuities cause unbounded downstream buffering, leading to OOM
-2. **musl allocator fragmentation**: Alpine Linux's musl libc fragments catastrophically under multithreaded libx264 (all threads contend on a single shared heap). The Fargate container uses `mimalloc` via `LD_PRELOAD` to replace musl's allocator.
+2. **musl allocator fragmentation**: Alpine Linux's musl libc fragments under multithreaded libx264. The Fargate container uses `mimalloc` via `LD_PRELOAD` to mitigate this, but memory still grows proportional to encoding duration.
 
-Both fixes are required — `setpts` alone or `mimalloc` alone still OOM. Known tradeoff: `setpts=N/(30*TB)` causes ~3-5s audio drift on 1-hour videos because it assumes exactly 30fps while cameras average ~29.96fps. `fps=30` preserves sync but causes OOM even with mimalloc.
+The `combinePair` function uses a two-pass approach to handle both issues:
+1. **Encode at 30fps** (`setpts=N/(30*TB)`) — monotonic timestamps prevent hstack buffering, and the shorter output duration (~53 min for 79 min of footage) keeps memory under 16 GB. Both `setpts` and `mimalloc` are required — either alone still OOMs.
+2. **Remux with `setts` BSF** — stretches video PTS by `30/actualFps` (≈1.5x) via stream copy (no re-encoding, near-instant). This restores the correct playback duration. The actual fps is computed by counting frames and dividing by audio duration.
+
+Residual ~2s audio drift over 79 min is inherent: the two cameras have slightly different frame rates (~19.96 vs ~19.94), and a single correction factor can't perfectly match both. Audio uses `amix` (not `amerge`) to handle cases where one camera's audio stream is truncated.
 
 ### Cloud Processing
 - Toggle "Process in Cloud" in ConfigPanel (enabled by default when AWS configured)

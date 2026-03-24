@@ -1,7 +1,11 @@
 import ffmpeg from 'fluent-ffmpeg';
+import { execFile } from 'child_process';
+import { promisify } from 'util';
 import { promises as fs } from 'fs';
 import { join } from 'path';
 import { tmpdir } from 'os';
+
+const execFileAsync = promisify(execFile);
 
 // Use ffprobe-static if available (local dev), otherwise system ffprobe (Docker container)
 try {
@@ -10,6 +14,61 @@ try {
   ffmpeg.setFfprobePath(ffprobeStatic.path);
 } catch {
   // System ffprobe will be used
+}
+
+/**
+ * Get effective fps for a video by counting frames and measuring audio duration.
+ * Uses frame_count / audio_duration for exact accuracy (no cumulative drift).
+ * Falls back to avg_frame_rate from container metadata if counting fails.
+ */
+async function getEffectiveFps(videoPath) {
+  let frameCount, audioDuration, videoDuration, avgFps;
+
+  // Get metadata from ffprobe (instant)
+  const metadata = await new Promise((resolve, reject) => {
+    ffmpeg.ffprobe(videoPath, (err, data) => {
+      if (err) reject(new Error(`ffprobe failed: ${err.message}`));
+      else resolve(data);
+    });
+  });
+
+  const videoStream = metadata.streams.find(s => s.codec_type === 'video');
+  const audioStream = metadata.streams.find(s => s.codec_type === 'audio');
+  videoDuration = parseFloat(videoStream?.duration || metadata.format.duration || 0);
+  audioDuration = parseFloat(audioStream?.duration || 0);
+
+  // Parse avg_frame_rate fraction (e.g. "950440000/47572293")
+  const [num, den] = (videoStream?.avg_frame_rate || '0/1').split('/').map(Number);
+  avgFps = den ? num / den : 0;
+
+  // Try to count frames via ffprobe -count_frames (slow but exact)
+  try {
+    const { stdout } = await execFileAsync('ffprobe', [
+      '-v', 'quiet', '-count_frames', '-select_streams', 'v:0',
+      '-show_entries', 'stream=nb_read_frames', '-of', 'csv=p=0',
+      videoPath
+    ], { timeout: 120000 });
+    frameCount = parseInt(stdout.trim());
+  } catch {
+    // Estimate from avg_frame_rate * duration
+    frameCount = Math.round(avgFps * videoDuration);
+  }
+
+  if (!frameCount || frameCount <= 0) {
+    return avgFps || 20;
+  }
+
+  // Use audio duration as reference (ground truth for real-time length).
+  // Fall back to video duration if audio is missing or truncated (< 90% of video).
+  const refDuration = (audioDuration > 0 && audioDuration >= videoDuration * 0.9)
+    ? audioDuration
+    : videoDuration;
+
+  if (refDuration <= 0) return avgFps || 20;
+
+  const fps = frameCount / refDuration;
+  console.log(`[ffmpeg] ${videoPath}: ${frameCount} frames / ${refDuration.toFixed(1)}s = ${fps.toFixed(4)} fps`);
+  return fps;
 }
 
 /**
@@ -25,7 +84,7 @@ try {
  * @param {string} config.audioBitrate - Audio bitrate (default: '192k')
  * @returns {Promise<void>}
  */
-export function combinePair(videoA, videoB, outputPath, onProgress, config = {}) {
+export async function combinePair(videoA, videoB, outputPath, onProgress, config = {}) {
   const {
     crf = 18,
     preset = 'veryfast',
@@ -33,23 +92,33 @@ export function combinePair(videoA, videoB, outputPath, onProgress, config = {})
     audioBitrate = '192k'
   } = config;
 
-  return new Promise((resolve, reject) => {
+  // Probe effective fps to compute the timestamp correction factor
+  const [fpsA, fpsB] = await Promise.all([
+    getEffectiveFps(videoA),
+    getEffectiveFps(videoB)
+  ]);
+  const avgFps = (fpsA + fpsB) / 2;
+  const correctionFactor = (30 / avgFps).toFixed(6);
+  console.log(`[ffmpeg] Correction factor: 30 / ${avgFps.toFixed(4)} = ${correctionFactor}`);
+
+  // Step 1: Encode with setpts=N/(30*TB) — proven safe at 900MB on 16GB Fargate.
+  // Using 30fps for both inputs keeps hstack framesync perfectly synchronized.
+  // This produces a shorter video (53 min instead of 79 min) but avoids OOM.
+  const tempPath = outputPath.replace(/\.mp4$/, '_30fps.mp4');
+
+  await new Promise((resolve, reject) => {
     const command = ffmpeg();
 
-    // Add input videos
     command.input(videoA);
     command.input(videoB);
 
-    // Apply complex filter for side-by-side layout with audio merge
-    // setpts=N/(30*TB) eliminates VFR timestamp discontinuities
     const filterParts = [
       '[0:v]setpts=N/(30*TB),scale=-2:720,setsar=1[left]',
       '[1:v]setpts=N/(30*TB),scale=-2:720,setsar=1[right]',
       '[left][right]hstack=inputs=2[v]',
-      '[0:a][1:a]amerge=inputs=2[a]'
+      '[0:a][1:a]amix=inputs=2:duration=longest:normalize=0[a]'
     ];
 
-    // Add final scaling if maxWidth specified
     if (maxWidth) {
       filterParts[2] = '[left][right]hstack=inputs=2[vstacked]';
       filterParts.push(`[vstacked]scale=${maxWidth}:-2[v]`);
@@ -68,26 +137,51 @@ export function combinePair(videoA, videoB, outputPath, onProgress, config = {})
         '-b:a', audioBitrate
       ]);
 
-    command.output(outputPath);
+    command.output(tempPath);
 
-    // Handle progress updates
     command.on('progress', (progress) => {
       if (onProgress && progress.percent) {
-        onProgress(Math.round(progress.percent));
+        // Scale to 0-90% for the encode step
+        onProgress(Math.round(progress.percent * 0.9));
       }
     });
 
-    // Handle completion
-    command.on('end', () => {
-      resolve();
-    });
-
-    // Handle errors
+    command.on('end', () => resolve());
     command.on('error', (err) => {
       reject(new Error(`Failed to combine videos: ${err.message}`));
     });
 
-    // Start processing
+    command.run();
+  });
+
+  // Step 2: Remux with corrected timestamps — stream copy, no re-encoding, near-instant.
+  // Stretches video PTS by correctionFactor (30/actualFps ≈ 1.5) so video duration
+  // matches the original recording. Audio keeps its original timestamps.
+  console.log(`[ffmpeg] Remuxing with timestamp correction (factor=${correctionFactor})`);
+
+  await new Promise((resolve, reject) => {
+    const command = ffmpeg();
+
+    command.input(tempPath);
+
+    command
+      .outputOptions([
+        '-c', 'copy',
+        '-bsf:v', `setts=pts=${correctionFactor}*PTS:dts=${correctionFactor}*DTS:duration=${correctionFactor}*DURATION`
+      ]);
+
+    command.output(outputPath);
+
+    command.on('end', async () => {
+      try { await fs.unlink(tempPath); } catch {}
+      if (onProgress) onProgress(100);
+      resolve();
+    });
+    command.on('error', async (err) => {
+      try { await fs.unlink(tempPath); } catch {}
+      reject(new Error(`Failed to remux video: ${err.message}`));
+    });
+
     command.run();
   });
 }
