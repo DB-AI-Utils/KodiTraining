@@ -42,12 +42,12 @@ function formatSize(bytes) {
 
 function formatDate(timestamp) {
   const d = new Date(timestamp);
-  return d.toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' });
+  return d.toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric', timeZone: 'Europe/Tallinn' });
 }
 
 function formatTime(timestamp) {
   const d = new Date(timestamp);
-  return d.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: false });
+  return d.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: false, timeZone: 'Europe/Tallinn' });
 }
 
 export async function handleRecordingStopped(payload) {

@@ -1,7 +1,7 @@
 import { S3Client, GetObjectCommand, PutObjectCommand, ListObjectsV2Command } from '@aws-sdk/client-s3';
 import { promises as fs } from 'fs';
 import { join } from 'path';
-import { createWriteStream } from 'fs';
+import { createWriteStream, createReadStream } from 'fs';
 import { pipeline } from 'stream/promises';
 import { combinePair, concatenateVideos, compressVideo, getVideoDuration, padVideo } from './services/ffmpeg.js';
 
@@ -126,12 +126,11 @@ async function main() {
     // Upload result
     await reportProgress(95, 'uploading');
     const finalPath = join(OUTPUT_DIR, 'final.mp4');
-    const fileContent = await fs.readFile(finalPath);
 
     await s3.send(new PutObjectCommand({
       Bucket: S3_BUCKET,
       Key: `jobs/${JOB_ID}/output/final.mp4`,
-      Body: fileContent,
+      Body: createReadStream(finalPath),
     }));
 
     await reportProgress(100, 'done');
