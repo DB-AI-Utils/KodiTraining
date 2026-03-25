@@ -327,7 +327,7 @@ export async function handleRejection(sessionId) {
   if (!session || session.status !== 'pending_approval') return;
 
   session.status = 'rejected';
-  await telegram.editMessage(session.telegramMessageId, '❌ <b>Skipped</b> — not processing this session.');
+  await telegram.sendMessage('❌ <b>Skipped</b> — not processing this session.');
 }
 
 async function cleanupLocalAndS3(session) {
@@ -367,16 +367,11 @@ export async function handleDelete(sessionId) {
   const session = sessions.get(sessionId);
   if (!session) return;
 
-  await telegram.editMessage(session.telegramMessageId, '🗑 <b>Deleting source files...</b>');
-
   const { deleted } = await cleanupRecordings(session);
   await cleanupLocalAndS3(session);
   sessions.delete(sessionId);
 
-  await telegram.editMessage(
-    session.telegramMessageId,
-    `🗑 <b>Deleted</b> — removed ${deleted} recordings.`
-  );
+  await telegram.sendMessage(`🗑 <b>Deleted</b> — removed ${deleted} recordings.`);
 }
 
 export async function handleNewLink(sessionId) {
