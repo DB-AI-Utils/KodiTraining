@@ -84,8 +84,8 @@ TELEGRAM_API_URL=http://localhost:8082          # Required if API ID is set. Poi
 Best when cameras have different segment lengths. Pi now records one file per camera, so concatenation is typically skipped.
 
 1. **Concatenate segments** - If multiple segments per camera, join with stream copy
-2. **Pre-mix audio** - Both cameras' audio mixed to lossless FLAC via `apad`+`atrim`+`amix` (separate FFmpeg step, ~1 min)
-3. **Chunked hstack** - Video combined side-by-side in 10-min chunks with inline `fps=30` VFR normalization. Each chunk uses pre-mixed audio as third input. Incremental concat merges chunks and deletes old files to bound disk usage.
+2. **Pre-mix audio** - Both cameras' audio mixed to lossless FLAC via `apad`+`atrim`+`amix` (separate FFmpeg step, ~1 min). Done separately because `amix` inside a complex filter graph stalls when one audio input EOF's mid-stream.
+3. **Combine side-by-side** - `hstack` filter with inline `fps=30` VFR normalization, pre-mixed audio as third input. Single pass, ~833 MB for 79 min.
 4. **Upload** - Final video uploaded to S3
 
 ### Pair-by-Pair Mode
