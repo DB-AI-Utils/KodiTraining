@@ -34,7 +34,8 @@ export function combinePair(videoA, videoB, outputPath, onProgress, config = {})
     audioBitrate = '192k',
     startTime = null,
     duration = null,
-    normalizeVfr = false
+    normalizeVfr = false,
+    audioPath = null
   } = config;
 
   return new Promise((resolve, reject) => {
@@ -47,6 +48,12 @@ export function combinePair(videoA, videoB, outputPath, onProgress, config = {})
     command.input(videoB);
     if (startTime !== null) {
       command.inputOptions(['-ss', `${startTime}`, '-t', `${duration}`]);
+    }
+    if (audioPath) {
+      command.input(audioPath);
+      if (startTime !== null) {
+        command.inputOptions(['-ss', `${startTime}`, '-t', `${duration}`]);
+      }
     }
 
     const vfr = normalizeVfr ? 'fps=30,' : '';
@@ -63,10 +70,11 @@ export function combinePair(videoA, videoB, outputPath, onProgress, config = {})
 
     command.complexFilter(filterParts.join(';'));
 
+    const audioMap = audioPath ? '2:a' : '1:a';
     command
       .outputOptions([
         '-map', '[v]',
-        '-map', '1:a',
+        '-map', audioMap,
         '-c:v', 'libx264',
         '-preset', preset,
         '-crf', `${crf}`,
@@ -85,6 +93,45 @@ export function combinePair(videoA, videoB, outputPath, onProgress, config = {})
     command.on('end', () => resolve());
     command.on('error', (err) => {
       reject(new Error(`Failed to combine videos: ${err.message}`));
+    });
+
+    command.run();
+  });
+}
+
+/**
+ * Pre-mix audio from two video files into a single lossless WAV file.
+ * Uses apad to handle truncated audio from either camera.
+ * Output is WAV (lossless) to avoid double lossy encoding.
+ */
+export function premixAudio(videoA, videoB, outputPath, duration, onProgress) {
+  return new Promise((resolve, reject) => {
+    const command = ffmpeg();
+    const dur = Math.ceil(duration);
+
+    command.input(videoA);
+    command.input(videoB);
+
+    command.complexFilter([
+      `[0:a]aresample=async=1:first_pts=0,apad,atrim=0:${dur}[a0]`,
+      `[1:a]aresample=async=1:first_pts=0,apad,atrim=0:${dur}[a1]`,
+      '[a0][a1]amix=inputs=2:duration=first:normalize=0[a]'
+    ].join(';'));
+
+    command
+      .outputOptions(['-map', '[a]'])
+      .audioCodec('flac')
+      .output(outputPath);
+
+    command.on('progress', (progress) => {
+      if (onProgress && progress.percent) {
+        onProgress(Math.round(progress.percent));
+      }
+    });
+
+    command.on('end', () => resolve());
+    command.on('error', (err) => {
+      reject(new Error(`Failed to pre-mix audio: ${err.message}`));
     });
 
     command.run();

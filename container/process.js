@@ -3,7 +3,7 @@ import { promises as fs } from 'fs';
 import { join } from 'path';
 import { createWriteStream, createReadStream } from 'fs';
 import { pipeline } from 'stream/promises';
-import { combinePair, concatenateVideos, compressVideo, getVideoDuration } from './services/ffmpeg.js';
+import { combinePair, concatenateVideos, compressVideo, getVideoDuration, premixAudio } from './services/ffmpeg.js';
 
 const JOB_ID = process.env.JOB_ID;
 const S3_BUCKET = process.env.S3_BUCKET;
@@ -186,11 +186,19 @@ async function processConcatenateFirst(orderedA, orderedB, config) {
   // Get durations for chunking
   const durationA = await getVideoDuration(inputA);
   const durationB = await getVideoDuration(inputB);
+  const maxDuration = Math.max(durationA, durationB);
   console.log(`[stage] Durations: A=${durationA.toFixed(1)}s, B=${durationB.toFixed(1)}s`);
 
-  // Step 3: Combine side-by-side in chunks (fps=30 normalizes VFR inline)
+  // Step 3: Pre-mix audio (lossless WAV, handles truncated audio from either camera)
+  const mixedAudioPath = join(OUTPUT_DIR, 'mixed_audio.flac');
+  console.log(`[stage] Pre-mixing audio from both cameras`);
+  await premixAudio(inputA, inputB, mixedAudioPath, maxDuration, (percent) => {
+    reportProgress(20 + (percent / 100) * 5, 'processing');
+  });
+  await logMemory('after audio premix');
+
+  // Step 4: Combine side-by-side in chunks (fps=30 normalizes VFR inline)
   const CHUNK_SECONDS = 600;
-  const maxDuration = Math.max(durationA, durationB);
   const numChunks = Math.ceil(maxDuration / CHUNK_SECONDS);
   console.log(`[stage] Combining side-by-side in ${numChunks} chunks of ${CHUNK_SECONDS}s`);
 
@@ -202,9 +210,9 @@ async function processConcatenateFirst(orderedA, orderedB, config) {
     const chunkPath = join(OUTPUT_DIR, `chunk_${i}.mp4`);
     console.log(`[stage] Encoding chunk ${i + 1}/${numChunks} (${chunkStart}s-${chunkStart + CHUNK_SECONDS}s)`);
     await combinePair(inputA, inputB, chunkPath, (percent) => {
-      const overall = 20 + ((i + percent / 100) / numChunks) * 70;
+      const overall = 25 + ((i + percent / 100) / numChunks) * 65;
       reportProgress(overall, 'processing');
-    }, { ...config, startTime: chunkStart, duration: CHUNK_SECONDS, normalizeVfr: true });
+    }, { ...config, startTime: chunkStart, duration: CHUNK_SECONDS, normalizeVfr: true, audioPath: mixedAudioPath });
     await logMemory(`after chunk ${i + 1}/${numChunks}`);
 
     if (partialPath === null) {
