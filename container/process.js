@@ -3,7 +3,7 @@ import { promises as fs } from 'fs';
 import { join } from 'path';
 import { createWriteStream, createReadStream } from 'fs';
 import { pipeline } from 'stream/promises';
-import { combinePair, concatenateVideos, compressVideo, getVideoDuration, padVideo } from './services/ffmpeg.js';
+import { combinePair, concatenateVideos, compressVideo, getVideoDuration } from './services/ffmpeg.js';
 
 const JOB_ID = process.env.JOB_ID;
 const S3_BUCKET = process.env.S3_BUCKET;
@@ -20,6 +20,21 @@ const OUTPUT_DIR = '/tmp/output';
 
 let lastProgressUpdate = 0;
 const PROGRESS_INTERVAL = 5000;
+
+async function logMemory(label) {
+  try {
+    const current = await fs.readFile('/sys/fs/cgroup/memory/memory.usage_in_bytes', 'utf8');
+    const max = await fs.readFile('/sys/fs/cgroup/memory/memory.limit_in_bytes', 'utf8');
+    const mb = (parseInt(current) / 1024 / 1024).toFixed(0);
+    const maxVal = parseInt(max);
+    const maxMb = maxVal > 2 ** 62 ? 'max' : (maxVal / 1024 / 1024).toFixed(0);
+    const nodeRss = (process.memoryUsage().rss / 1024 / 1024).toFixed(0);
+    console.log(`[memory] ${label}: cgroup=${mb}MB/${maxMb}MB node_rss=${nodeRss}MB`);
+  } catch (err) {
+    const nodeRss = (process.memoryUsage().rss / 1024 / 1024).toFixed(0);
+    console.log(`[memory] ${label}: cgroup=N/A (${err.code}) node_rss=${nodeRss}MB`);
+  }
+}
 
 async function reportProgress(percent, phase, error = null) {
   const now = Date.now();
@@ -144,62 +159,70 @@ async function main() {
 }
 
 async function processConcatenateFirst(orderedA, orderedB, config) {
-  const totalSteps = 3;
-  let step = 0;
-
-  // Step 1: Concatenate Camera A
-  let concatAPath;
+  // Step 1: Concatenate Camera A (stream copy if multiple segments)
+  let inputA;
   if (orderedA.length === 1) {
-    concatAPath = orderedA[0];
+    inputA = orderedA[0];
   } else {
-    concatAPath = join(OUTPUT_DIR, 'concat_a.mp4');
-    await concatenateVideos(orderedA, concatAPath, (percent) => {
-      const overall = 10 + ((step + percent / 100) / totalSteps) * 80;
-      reportProgress(overall, 'processing');
+    inputA = join(OUTPUT_DIR, 'concat_a.mp4');
+    console.log(`[stage] Concatenating ${orderedA.length} Camera A segments`);
+    await concatenateVideos(orderedA, inputA, (percent) => {
+      reportProgress(10 + (percent / 100) * 5, 'processing');
     }, { reencode: false });
   }
-  step++;
 
-  // Step 2: Concatenate Camera B
-  let concatBPath;
+  // Step 2: Concatenate Camera B (stream copy if multiple segments)
+  let inputB;
   if (orderedB.length === 1) {
-    concatBPath = orderedB[0];
+    inputB = orderedB[0];
   } else {
-    concatBPath = join(OUTPUT_DIR, 'concat_b.mp4');
-    await concatenateVideos(orderedB, concatBPath, (percent) => {
-      const overall = 10 + ((step + percent / 100) / totalSteps) * 80;
-      reportProgress(overall, 'processing');
+    inputB = join(OUTPUT_DIR, 'concat_b.mp4');
+    console.log(`[stage] Concatenating ${orderedB.length} Camera B segments`);
+    await concatenateVideos(orderedB, inputB, (percent) => {
+      reportProgress(15 + (percent / 100) * 5, 'processing');
     }, { reencode: false });
   }
-  step++;
 
-  // Check durations and pad if needed
-  const durationA = await getVideoDuration(concatAPath);
-  const durationB = await getVideoDuration(concatBPath);
-  const durationDiff = Math.abs(durationA - durationB);
+  // Get durations for chunking
+  const durationA = await getVideoDuration(inputA);
+  const durationB = await getVideoDuration(inputB);
+  console.log(`[stage] Durations: A=${durationA.toFixed(1)}s, B=${durationB.toFixed(1)}s`);
 
-  let finalConcatA = concatAPath;
-  let finalConcatB = concatBPath;
+  // Step 3: Combine side-by-side in chunks (fps=30 normalizes VFR inline)
+  const CHUNK_SECONDS = 600;
+  const maxDuration = Math.max(durationA, durationB);
+  const numChunks = Math.ceil(maxDuration / CHUNK_SECONDS);
+  console.log(`[stage] Combining side-by-side in ${numChunks} chunks of ${CHUNK_SECONDS}s`);
 
-  if (durationDiff > 300) {
-    const paddingAmount = durationDiff;
-    if (durationA < durationB) {
-      const paddedPath = join(OUTPUT_DIR, 'concat_a_padded.mp4');
-      await padVideo(concatAPath, paddedPath, paddingAmount);
-      finalConcatA = paddedPath;
+  await logMemory('before chunks');
+  let partialPath = null;
+
+  for (let i = 0; i < numChunks; i++) {
+    const chunkStart = i * CHUNK_SECONDS;
+    const chunkPath = join(OUTPUT_DIR, `chunk_${i}.mp4`);
+    console.log(`[stage] Encoding chunk ${i + 1}/${numChunks} (${chunkStart}s-${chunkStart + CHUNK_SECONDS}s)`);
+    await combinePair(inputA, inputB, chunkPath, (percent) => {
+      const overall = 20 + ((i + percent / 100) / numChunks) * 70;
+      reportProgress(overall, 'processing');
+    }, { ...config, startTime: chunkStart, duration: CHUNK_SECONDS, normalizeVfr: true });
+    await logMemory(`after chunk ${i + 1}/${numChunks}`);
+
+    if (partialPath === null) {
+      partialPath = chunkPath;
     } else {
-      const paddedPath = join(OUTPUT_DIR, 'concat_b_padded.mp4');
-      await padVideo(concatBPath, paddedPath, paddingAmount);
-      finalConcatB = paddedPath;
+      const concatOut = join(OUTPUT_DIR, `partial_${i}.mp4`);
+      console.log(`[stage] Merging chunk ${i + 1} into partial output`);
+      await concatenateVideos([partialPath, chunkPath], concatOut, null, { reencode: false });
+      await fs.unlink(partialPath);
+      await fs.unlink(chunkPath);
+      partialPath = concatOut;
+      await logMemory(`after merge ${i + 1}/${numChunks}`);
     }
   }
 
-  // Step 3: Combine side-by-side
+  // Rename final partial to final.mp4
   const finalPath = join(OUTPUT_DIR, 'final.mp4');
-  await combinePair(finalConcatA, finalConcatB, finalPath, (percent) => {
-    const overall = 10 + ((step + percent / 100) / totalSteps) * 80;
-    reportProgress(overall, 'processing');
-  }, config);
+  await fs.rename(partialPath, finalPath);
 }
 
 async function processPairByPair(orderedA, orderedB, config) {
