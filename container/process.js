@@ -183,13 +183,13 @@ async function processConcatenateFirst(orderedA, orderedB, config) {
     }, { reencode: false });
   }
 
-  // Get durations for chunking
+  // Get durations
   const durationA = await getVideoDuration(inputA);
   const durationB = await getVideoDuration(inputB);
   const maxDuration = Math.max(durationA, durationB);
   console.log(`[stage] Durations: A=${durationA.toFixed(1)}s, B=${durationB.toFixed(1)}s`);
 
-  // Step 3: Pre-mix audio (lossless WAV, handles truncated audio from either camera)
+  // Step 3: Pre-mix audio (lossless FLAC, handles truncated audio from either camera)
   const mixedAudioPath = join(OUTPUT_DIR, 'mixed_audio.flac');
   console.log(`[stage] Pre-mixing audio from both cameras`);
   await premixAudio(inputA, inputB, mixedAudioPath, maxDuration, (percent) => {
@@ -197,40 +197,13 @@ async function processConcatenateFirst(orderedA, orderedB, config) {
   });
   await logMemory('after audio premix');
 
-  // Step 4: Combine side-by-side in chunks (fps=30 normalizes VFR inline)
-  const CHUNK_SECONDS = 600;
-  const numChunks = Math.ceil(maxDuration / CHUNK_SECONDS);
-  console.log(`[stage] Combining side-by-side in ${numChunks} chunks of ${CHUNK_SECONDS}s`);
-
-  await logMemory('before chunks');
-  let partialPath = null;
-
-  for (let i = 0; i < numChunks; i++) {
-    const chunkStart = i * CHUNK_SECONDS;
-    const chunkPath = join(OUTPUT_DIR, `chunk_${i}.mp4`);
-    console.log(`[stage] Encoding chunk ${i + 1}/${numChunks} (${chunkStart}s-${chunkStart + CHUNK_SECONDS}s)`);
-    await combinePair(inputA, inputB, chunkPath, (percent) => {
-      const overall = 25 + ((i + percent / 100) / numChunks) * 65;
-      reportProgress(overall, 'processing');
-    }, { ...config, startTime: chunkStart, duration: CHUNK_SECONDS, normalizeVfr: true, audioPath: mixedAudioPath });
-    await logMemory(`after chunk ${i + 1}/${numChunks}`);
-
-    if (partialPath === null) {
-      partialPath = chunkPath;
-    } else {
-      const concatOut = join(OUTPUT_DIR, `partial_${i}.mp4`);
-      console.log(`[stage] Merging chunk ${i + 1} into partial output`);
-      await concatenateVideos([partialPath, chunkPath], concatOut, null, { reencode: false });
-      await fs.unlink(partialPath);
-      await fs.unlink(chunkPath);
-      partialPath = concatOut;
-      await logMemory(`after merge ${i + 1}/${numChunks}`);
-    }
-  }
-
-  // Rename final partial to final.mp4
+  // Step 4: Combine side-by-side (fps=30 normalizes VFR inline, pre-mixed audio)
+  console.log(`[stage] Combining side-by-side`);
   const finalPath = join(OUTPUT_DIR, 'final.mp4');
-  await fs.rename(partialPath, finalPath);
+  await combinePair(inputA, inputB, finalPath, (percent) => {
+    reportProgress(25 + (percent / 100) * 65, 'processing');
+  }, { ...config, normalizeVfr: true, audioPath: mixedAudioPath });
+  await logMemory('after combine');
 }
 
 async function processPairByPair(orderedA, orderedB, config) {
