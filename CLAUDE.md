@@ -81,35 +81,30 @@ TELEGRAM_API_URL=http://localhost:8082          # Required if API ID is set. Poi
 ## FFmpeg Processing Modes
 
 ### Concatenate-First Mode (Default)
-Best when cameras have different segment lengths (e.g., one camera creates 40-second files, another creates 1-minute files).
+Best when cameras have different segment lengths. Pi now records one file per camera, so concatenation is typically skipped.
 
-1. **Concatenate Camera A** - All Camera A videos joined with re-encoding (`fps=30` for VFR normalization)
-2. **Concatenate Camera B** - All Camera B videos joined with re-encoding
-3. **Pad shorter video** - If durations differ, pad shorter with cloned frames
-4. **Combine side-by-side** - `hstack` filter, scales to 720p, merges audio
-5. **Compress** - Final video encoded with libx264
+1. **Concatenate segments** - If multiple segments per camera, join with stream copy
+2. **Pre-mix audio** - Both cameras' audio mixed to lossless FLAC via `apad`+`atrim`+`amix` (separate FFmpeg step, ~1 min)
+3. **Chunked hstack** - Video combined side-by-side in 10-min chunks with inline `fps=30` VFR normalization. Each chunk uses pre-mixed audio as third input. Incremental concat merges chunks and deletes old files to bound disk usage.
+4. **Upload** - Final video uploaded to S3
 
 ### Pair-by-Pair Mode
-Original mode for when both cameras have matching segment counts and lengths. Uncheck "Concatenate First" to use.
+Legacy mode for when both cameras have matching segment counts and lengths. Uncheck "Concatenate First" to use.
 
-1. **Combine pairs** - Each pair (a/file1 + b/file1) combined side-by-side with `hstack`
-   - Forces `fps=30` to normalize variable frame rate cameras (Xiaomi VFR fix)
-   - Scales both to 720p height, merges audio from both cameras
+1. **Combine pairs** - Each pair combined side-by-side with `hstack`, scales to 720p
 2. **Concatenate** - All pair outputs joined using concat demuxer (stream copy)
 3. **Compress** - Final video encoded with libx264
 
 ## Key Implementation Details
 
 ### VFR (Variable Frame Rate) Handling
-Xiaomi C400 cameras record VFR at ~20fps with PTS discontinuities (3s gaps at recording start, occasional mid-stream gaps). Two problems occur when combining VFR inputs with hstack:
-1. **hstack framesync buffering**: VFR PTS discontinuities cause unbounded downstream buffering, leading to OOM
-2. **musl allocator fragmentation**: Alpine Linux's musl libc fragments under multithreaded libx264. The Fargate container uses `mimalloc` via `LD_PRELOAD` to mitigate this, but memory still grows proportional to encoding duration.
+Xiaomi C400 cameras record VFR at ~20fps with PTS discontinuities (3s gap at recording start, occasional mid-stream gaps). Camera audio may be truncated unpredictably (e.g., Camera A audio ends at 2530s while video continues to 4757s).
 
-The `combinePair` function uses a two-pass approach to handle both issues:
-1. **Encode at 30fps** (`setpts=N/(30*TB)`) — monotonic timestamps prevent hstack buffering, and the shorter output duration (~53 min for 79 min of footage) keeps memory under 16 GB. Both `setpts` and `mimalloc` are required — either alone still OOMs.
-2. **Remux with `setts` BSF** — stretches video PTS by `30/actualFps` (≈1.5x) via stream copy (no re-encoding, near-instant). This restores the correct playback duration. The actual fps is computed by counting frames and dividing by audio duration.
+**Chunked processing** solves the OOM: video is combined in 10-minute chunks, each running a separate FFmpeg process. The `fps=30` filter in each chunk normalizes VFR to CFR inline — this preserves the original timeline (zero audio drift) while producing clean monotonic timestamps for hstack.
 
-Residual ~2s audio drift over 79 min is inherent: the two cameras have slightly different frame rates (~19.96 vs ~19.94), and a single correction factor can't perfectly match both. Audio uses `amix` (not `amerge`) to handle cases where one camera's audio stream is truncated.
+**Audio pre-mixing** is required because `amix` inside a complex filter graph with video filters causes unbounded buffering when one audio input EOF's mid-stream (FFmpeg filter graph scheduling bug). The fix: pre-mix audio as a separate audio-only FFmpeg step using `apad`+`atrim`+`amix`, outputting lossless FLAC. Each chunk then uses this pre-mixed file as a third input, with AAC encoding happening only once.
+
+Peak memory: ~443 MB for 79-min video (well within 16 GB Fargate limit). The container still uses `mimalloc` via `LD_PRELOAD` as a general allocator improvement.
 
 ### Cloud Processing
 - Toggle "Process in Cloud" in ConfigPanel (enabled by default when AWS configured)

@@ -14,17 +14,8 @@ try {
 
 /**
  * Combine two videos side-by-side using hstack filter.
- * Inputs MUST be CFR-normalized before calling this function.
- * @param {string} videoA - Path to first video (CFR)
- * @param {string} videoB - Path to second video (CFR)
- * @param {string} outputPath - Path for output video
- * @param {Function} onProgress - Progress callback (percent: 0-100)
- * @param {Object} config - Optional compression config (for final output)
- * @param {number} config.crf - Constant Rate Factor (default: 18)
- * @param {string} config.preset - Encoding preset (default: 'veryfast')
- * @param {number} config.maxWidth - Maximum width for scaling (optional)
- * @param {string} config.audioBitrate - Audio bitrate (default: '192k')
- * @returns {Promise<void>}
+ * Supports chunked processing via startTime/duration, inline VFR
+ * normalization via normalizeVfr, and pre-mixed audio via audioPath.
  */
 export function combinePair(videoA, videoB, outputPath, onProgress, config = {}) {
   const {
@@ -100,9 +91,10 @@ export function combinePair(videoA, videoB, outputPath, onProgress, config = {})
 }
 
 /**
- * Pre-mix audio from two video files into a single lossless WAV file.
- * Uses apad to handle truncated audio from either camera.
- * Output is WAV (lossless) to avoid double lossy encoding.
+ * Pre-mix audio from two video files into a single lossless FLAC file.
+ * Uses apad+atrim to handle unpredictable audio truncation from either camera.
+ * Separated from the video filter graph because amix stalls when one audio
+ * input EOF's mid-stream inside a complex filter with video filters.
  */
 export function premixAudio(videoA, videoB, outputPath, duration, onProgress) {
   return new Promise((resolve, reject) => {
@@ -386,55 +378,12 @@ export function getVideoDimensions(videoPath) {
   });
 }
 
-/**
- * Pad a video with cloned frames and silent audio
- * @param {string} inputPath - Path to input video
- * @param {string} outputPath - Path for output video
- * @param {number} paddingDuration - Seconds of padding to add at the end
- * @param {Function} onProgress - Progress callback (percent: 0-100)
- * @returns {Promise<void>}
- */
-/**
- * Normalize a VFR video to CFR. Single-input re-encode with -vsync cfr
- * produces clean monotonic timestamps. This is safe for memory since there
- * is no multi-input framesync. Must be done BEFORE combinePair/hstack.
- */
-export function normalizeVFR(inputPath, outputPath, onProgress) {
-  return new Promise((resolve, reject) => {
-    const command = ffmpeg();
-
-    command.input(inputPath);
-    command
-      .videoCodec('libx264')
-      .outputOptions(['-vsync', 'cfr', '-preset', 'veryfast', '-crf', '18'])
-      .audioCodec('aac')
-      .audioBitrate('192k')
-      .output(outputPath);
-
-    command.on('progress', (progress) => {
-      if (onProgress && progress.percent) {
-        onProgress(Math.round(progress.percent));
-      }
-    });
-
-    command.on('end', () => resolve());
-    command.on('error', (err) => {
-      reject(new Error(`Failed to normalize video: ${err.message}`));
-    });
-
-    command.run();
-  });
-}
-
 export function padVideo(inputPath, outputPath, paddingDuration, onProgress) {
   return new Promise((resolve, reject) => {
     const command = ffmpeg();
 
     command.input(inputPath);
 
-    // Use tpad filter to clone last frame at the end
-    // apad pads audio with silence
-    // Note: tpad stop_duration adds that many seconds AFTER the video ends
     command
       .complexFilter([
         `[0:v]tpad=stop_mode=clone:stop_duration=${paddingDuration}[v]`,
@@ -446,25 +395,19 @@ export function padVideo(inputPath, outputPath, paddingDuration, onProgress) {
       ])
       .output(outputPath);
 
-    // Handle progress updates
     command.on('progress', (progress) => {
       if (onProgress && progress.percent) {
         onProgress(Math.round(progress.percent));
       }
     });
 
-    // Handle completion
-    command.on('end', () => {
-      resolve();
-    });
-
-    // Handle errors
+    command.on('end', () => resolve());
     command.on('error', (err) => {
       reject(new Error(`Failed to pad video: ${err.message}`));
     });
 
-    // Start processing
     command.run();
   });
 }
+
 
