@@ -26,7 +26,8 @@ export function combinePair(videoA, videoB, outputPath, onProgress, config = {})
     startTime = null,
     duration = null,
     normalizeVfr = false,
-    audioPath = null
+    audioPath = null,
+    expectedDuration = null
   } = config;
 
   return new Promise((resolve, reject) => {
@@ -76,7 +77,11 @@ export function combinePair(videoA, videoB, outputPath, onProgress, config = {})
     command.output(outputPath);
 
     command.on('progress', (progress) => {
-      if (onProgress && progress.percent) {
+      if (!onProgress) return;
+      if (expectedDuration && progress.timemark) {
+        const currentTime = parseTimemark(progress.timemark);
+        onProgress(Math.min(99, Math.round((currentTime / expectedDuration) * 100)));
+      } else if (progress.percent) {
         onProgress(Math.round(progress.percent));
       }
     });

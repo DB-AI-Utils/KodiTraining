@@ -202,7 +202,7 @@ async function processConcatenateFirst(orderedA, orderedB, config) {
   const finalPath = join(OUTPUT_DIR, 'final.mp4');
   await combinePair(inputA, inputB, finalPath, (percent) => {
     reportProgress(25 + (percent / 100) * 65, 'processing');
-  }, { ...config, normalizeVfr: true, audioPath: mixedAudioPath });
+  }, { ...config, normalizeVfr: true, audioPath: mixedAudioPath, expectedDuration: maxDuration });
   await logMemory('after combine');
 }
 
