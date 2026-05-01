@@ -123,6 +123,10 @@ export async function sendCompletion(messageId, { duration, size, downloadUrl, s
 export async function sendError(messageId, errorMessage) {
   if (!bot) return;
 
+  if (messageId) {
+    await editMessage(messageId, '❌ <b>Processing Failed</b>');
+  }
+
   const text = [
     `❌ <b>Processing Failed</b>`,
     ``,
@@ -131,20 +135,7 @@ export async function sendError(messageId, errorMessage) {
     `Files remain on Pi — process manually via web UI.`,
   ].join('\n');
 
-  if (messageId) {
-    try {
-      await bot.editMessageText(text, {
-        chat_id: CHAT_ID,
-        message_id: messageId,
-        parse_mode: 'HTML',
-      });
-      return;
-    } catch {
-      // fallback to new message
-    }
-  }
-
-  await bot.sendMessage(CHAT_ID, text, { parse_mode: 'HTML' });
+  return bot.sendMessage(CHAT_ID, text, { parse_mode: 'HTML' });
 }
 
 export async function editMessage(messageId, text, replyMarkup) {

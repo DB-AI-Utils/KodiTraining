@@ -382,10 +382,7 @@ export async function handleNewLink(sessionId) {
   try {
     downloadUrl = await getPresignedDownloadUrl(session.processJobId);
   } catch (err) {
-    await telegram.editMessage(
-      session.telegramMessageId,
-      `❌ <b>Failed to generate new link:</b> ${err.message}`
-    );
+    await telegram.sendMessage(`❌ <b>Failed to generate new link:</b> ${err.message}`);
     return;
   }
 
@@ -568,8 +565,7 @@ export function initCallbackHandler() {
     console.log(`[automation] Callback: ${action} for session ${sessionId}`);
 
     if (!sessions.has(sessionId) && action !== 'approve') {
-      await telegram.editMessage(
-        query.message?.message_id,
+      await telegram.sendMessage(
         '⚠️ Session expired (server restarted). Use the web UI to clean up files.'
       );
       return;
