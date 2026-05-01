@@ -85,15 +85,15 @@ jobs:
           chmod 644 ~/.ssh/known_hosts
           cat > ~/.ssh/config << 'SSHEOF'
           Host do-jump
-            HostName ${{ vars.DO_HOST }}
-            User ${{ vars.DO_USER }}
+            HostName ${{ secrets.DO_HOST }}
+            User ${{ secrets.DO_USER }}
             IdentityFile ~/.ssh/do_key
             IdentitiesOnly yes
 
           Host pi
-            HostName ${{ vars.PI_HOST }}
-            Port ${{ vars.PI_PORT }}
-            User ${{ vars.PI_USER }}
+            HostName ${{ secrets.PI_HOST }}
+            Port ${{ secrets.PI_PORT }}
+            User ${{ secrets.PI_USER }}
             IdentityFile ~/.ssh/pi_key
             IdentitiesOnly yes
             ProxyJump do-jump
@@ -111,11 +111,11 @@ jobs:
           export IMAGE_TAG=${{ steps.tag.outputs.tag }}
           export AWS_ACCESS_KEY_ID=${{ secrets.AWS_ACCESS_KEY_ID }}
           export AWS_SECRET_ACCESS_KEY=${{ secrets.AWS_SECRET_ACCESS_KEY }}
-          export AWS_S3_BUCKET=${{ vars.AWS_S3_BUCKET }}
-          export AWS_ECS_CLUSTER=${{ vars.AWS_ECS_CLUSTER }}
-          export AWS_ECS_TASK_DEFINITION=${{ vars.AWS_ECS_TASK_DEFINITION }}
+          export AWS_S3_BUCKET=${{ secrets.AWS_S3_BUCKET }}
+          export AWS_ECS_CLUSTER=${{ secrets.AWS_ECS_CLUSTER }}
+          export AWS_ECS_TASK_DEFINITION=${{ secrets.AWS_ECS_TASK_DEFINITION }}
           export TELEGRAM_BOT_TOKEN=${{ secrets.TELEGRAM_BOT_TOKEN }}
-          export TELEGRAM_CHAT_ID=${{ vars.TELEGRAM_CHAT_ID }}
+          export TELEGRAM_CHAT_ID=${{ secrets.TELEGRAM_CHAT_ID }}
           export TELEGRAM_API_ID=${{ secrets.TELEGRAM_API_ID }}
           export TELEGRAM_API_HASH=${{ secrets.TELEGRAM_API_HASH }}
           echo "=== Pulling image: ${{ steps.tag.outputs.image }}:\${IMAGE_TAG} ==="
