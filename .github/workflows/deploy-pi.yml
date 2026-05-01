@@ -93,7 +93,7 @@ jobs:
           Host pi
             HostName ${{ secrets.PI_HOST }}
             Port ${{ secrets.PI_PORT }}
-            User ${{ secrets.PI_USER }}
+            User ${{ vars.PI_USER }}
             IdentityFile ~/.ssh/pi_key
             IdentitiesOnly yes
             ProxyJump do-jump
