@@ -70,10 +70,16 @@ export async function sendSessionPrompt(sessionInfo) {
   const msg = await bot.sendMessage(CHAT_ID, text, {
     parse_mode: 'HTML',
     reply_markup: {
-      inline_keyboard: [[
-        { text: '✅ Yes', callback_data: `approve:${sessionInfo.sessionId}` },
-        { text: '❌ No', callback_data: `reject:${sessionInfo.sessionId}` },
-      ]],
+      inline_keyboard: [
+        [
+          { text: '✅ 1x', callback_data: `approve:${sessionInfo.sessionId}:1` },
+          { text: '✅ 1.5x', callback_data: `approve:${sessionInfo.sessionId}:1.5` },
+          { text: '✅ 2x', callback_data: `approve:${sessionInfo.sessionId}:2` },
+        ],
+        [
+          { text: '❌ Reject', callback_data: `reject:${sessionInfo.sessionId}` },
+        ],
+      ],
     },
   });
 

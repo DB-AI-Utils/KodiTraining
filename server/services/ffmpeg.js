@@ -12,6 +12,14 @@ try {
   // System ffprobe will be used
 }
 
+// Speed values are interpolated into FFmpeg filter strings, so we restrict to a whitelist.
+function normalizeSpeed(v) {
+  const n = typeof v === 'number' ? v : parseFloat(v);
+  if (n === 1.5) return 1.5;
+  if (n === 2) return 2;
+  return 1;
+}
+
 /**
  * Combine two videos side-by-side using hstack filter.
  * Supports chunked processing via startTime/duration, inline VFR
@@ -27,8 +35,14 @@ export function combinePair(videoA, videoB, outputPath, onProgress, config = {})
     duration = null,
     normalizeVfr = false,
     audioPath = null,
-    expectedDuration = null
+    expectedDuration = null,
+    speed: rawSpeed = 1
   } = config;
+
+  const speed = normalizeSpeed(rawSpeed);
+  if (speed !== 1) {
+    console.log(`[ffmpeg] combinePair speed=${speed}x`);
+  }
 
   return new Promise((resolve, reject) => {
     const command = ffmpeg();
@@ -48,10 +62,11 @@ export function combinePair(videoA, videoB, outputPath, onProgress, config = {})
       }
     }
 
+    const speedFilter = speed !== 1 ? `setpts=PTS/${speed},` : '';
     const vfr = normalizeVfr ? 'fps=30,' : '';
     const filterParts = [
-      `[0:v]${vfr}scale=-2:720,setsar=1[left]`,
-      `[1:v]${vfr}scale=-2:720,setsar=1[right]`,
+      `[0:v]${speedFilter}${vfr}scale=-2:720,setsar=1[left]`,
+      `[1:v]${speedFilter}${vfr}scale=-2:720,setsar=1[right]`,
       '[left][right]hstack=inputs=2[v]'
     ];
 
@@ -60,9 +75,14 @@ export function combinePair(videoA, videoB, outputPath, onProgress, config = {})
       filterParts.push(`[vstacked]scale=${maxWidth}:-2[v]`);
     }
 
+    if (speed !== 1) {
+      const audioInput = audioPath ? '[2:a]' : '[1:a]';
+      filterParts.push(`${audioInput}atempo=${speed}[a]`);
+    }
+
     command.complexFilter(filterParts.join(';'));
 
-    const audioMap = audioPath ? '2:a' : '1:a';
+    const audioMap = speed !== 1 ? '[a]' : (audioPath ? '2:a' : '1:a');
     command
       .outputOptions([
         '-map', '[v]',
@@ -79,7 +99,7 @@ export function combinePair(videoA, videoB, outputPath, onProgress, config = {})
     command.on('progress', (progress) => {
       if (!onProgress) return;
       if (expectedDuration && progress.timemark) {
-        const currentTime = parseTimemark(progress.timemark);
+        const currentTime = parseTimemark(progress.timemark) * speed;
         onProgress(Math.min(99, Math.round((currentTime / expectedDuration) * 100)));
       } else if (progress.percent) {
         onProgress(Math.round(progress.percent));

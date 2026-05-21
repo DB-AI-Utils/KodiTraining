@@ -230,7 +230,7 @@ async function processVideos(jobId, order, config) {
           progress: Math.round(overallProgress),
           status: 'processing'
         });
-      });
+      }, config);
 
       pairPaths.push(pairOutputPath);
       completedSteps++;

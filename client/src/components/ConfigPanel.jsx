@@ -34,6 +34,10 @@ function ConfigPanel({ config, onChange, cloud, onCloudChange }) {
     onChange({ ...config, audioBitrate: e.target.value })
   }
 
+  const handleSpeedChange = (e) => {
+    onChange({ ...config, speed: parseFloat(e.target.value) })
+  }
+
   const handleConcatenateFirstToggle = (e) => {
     onChange({ ...config, concatenateFirst: e.target.checked })
   }
@@ -163,6 +167,24 @@ function ConfigPanel({ config, onChange, cloud, onCloudChange }) {
             <option value="128k">128k (good quality)</option>
             <option value="192k">192k (high quality)</option>
           </select>
+        </div>
+
+        <div className="config-item">
+          <label className="config-label">
+            <span className="label-text">Playback Speed</span>
+          </label>
+          <select
+            value={config.speed ?? 1}
+            onChange={handleSpeedChange}
+            className="config-select"
+          >
+            <option value="1">1x (original)</option>
+            <option value="1.5">1.5x</option>
+            <option value="2">2x</option>
+          </select>
+          <p className="config-hint">
+            Higher speeds produce smaller files for long sessions.
+          </p>
         </div>
       </div>
     </div>

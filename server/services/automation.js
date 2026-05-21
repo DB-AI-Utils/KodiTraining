@@ -17,6 +17,13 @@ import { getPresignedDownloadUrl, deleteAllJobs, stopTask } from './cloud.js';
 const sessions = new Map();
 let busy = false;
 
+function normalizeSpeed(v) {
+  const n = typeof v === 'number' ? v : parseFloat(v);
+  if (n === 1.5) return 1.5;
+  if (n === 2) return 2;
+  return 1;
+}
+
 function getSessionDuration(session) {
   const cameraA = session.recordings.filter(r => r.camera === 'camera_a');
   const cameraB = session.recordings.filter(r => r.camera === 'camera_b');
@@ -139,7 +146,7 @@ export async function handleRecordingStopped(payload) {
   }
 }
 
-export async function handleApproval(sessionId) {
+export async function handleApproval(sessionId, speed = 1) {
   if (busy) return;
   busy = true;
 
@@ -149,6 +156,7 @@ export async function handleApproval(sessionId) {
     return;
   }
 
+  const normalizedSpeed = normalizeSpeed(speed);
   session.status = 'importing';
 
   try {
@@ -179,6 +187,7 @@ export async function handleApproval(sessionId) {
       preset: 'slow',
       concatenateFirst: true,
       audioBitrate: '96k',
+      speed: normalizedSpeed,
     };
 
     jobs.set(processJobId, {
@@ -561,8 +570,8 @@ export function initCallbackHandler() {
     const data = query.data;
     if (!data) return;
 
-    const [action, sessionId] = data.split(':');
-    console.log(`[automation] Callback: ${action} for session ${sessionId}`);
+    const [action, sessionId, arg] = data.split(':');
+    console.log(`[automation] Callback: ${action} for session ${sessionId}${arg ? ` (arg=${arg})` : ''}`);
 
     if (!sessions.has(sessionId) && action !== 'approve') {
       await telegram.sendMessage(
@@ -572,9 +581,11 @@ export function initCallbackHandler() {
     }
 
     switch (action) {
-      case 'approve':
-        await handleApproval(sessionId);
+      case 'approve': {
+        const speed = normalizeSpeed(arg);
+        await handleApproval(sessionId, speed);
         break;
+      }
       case 'reject':
         await handleRejection(sessionId);
         break;

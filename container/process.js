@@ -220,7 +220,7 @@ async function processPairByPair(orderedA, orderedB, config) {
     await combinePair(orderedA[i], orderedB[i], pairPath, (percent) => {
       const overall = 10 + ((step + percent / 100) / totalSteps) * 80;
       reportProgress(overall, 'processing');
-    });
+    }, config);
     pairPaths.push(pairPath);
     step++;
   }

@@ -15,7 +15,8 @@ function App() {
     preset: 'slower',
     maxWidth: null,
     audioBitrate: '96k',
-    concatenateFirst: true
+    concatenateFirst: true,
+    speed: 1
   })
 
   // Processing state
