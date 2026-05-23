@@ -57,6 +57,56 @@ function formatTime(timestamp) {
   return d.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: false, timeZone: 'Europe/Tallinn' });
 }
 
+async function loadLastSession() {
+  const recordings = await recorder.listRecordings();
+  const allSessions = groupRecordingsIntoSessions(recordings);
+  if (allSessions.length === 0) return null;
+
+  const session = allSessions[allSessions.length - 1];
+  const cameraA = session.recordings.filter(r => r.camera === 'camera_a');
+  const cameraB = session.recordings.filter(r => r.camera === 'camera_b');
+  const durationA = cameraA.reduce((sum, r) => sum + (r.duration || 0), 0);
+  const durationB = cameraB.reduce((sum, r) => sum + (r.duration || 0), 0);
+  const sizeA = cameraA.reduce((sum, r) => sum + (r.size || 0), 0);
+  const sizeB = cameraB.reduce((sum, r) => sum + (r.size || 0), 0);
+
+  return { session, cameraA, cameraB, durationA, durationB, sizeA, sizeB };
+}
+
+function registerSession(data) {
+  const sessionId = uuidv4();
+  const sessionState = {
+    sessionId,
+    status: 'pending_approval',
+    telegramMessageId: null,
+    processJobId: null,
+    recordings: data.session.recordings,
+    filenames: data.session.recordings.map(r => r.filename),
+    importedFiles: { a: [], b: [] },
+    date: formatDate(data.session.startTime),
+    timeRange: `${formatTime(data.session.startTime)} – ${formatTime(data.session.endTime)}`,
+  };
+  sessions.set(sessionId, sessionState);
+
+  const sessionInfo = {
+    sessionId,
+    date: sessionState.date,
+    timeRange: sessionState.timeRange,
+    cameraA: {
+      segments: data.cameraA.length,
+      duration: formatDuration(data.durationA),
+      size: formatSize(data.sizeA),
+    },
+    cameraB: {
+      segments: data.cameraB.length,
+      duration: formatDuration(data.durationB),
+      size: formatSize(data.sizeB),
+    },
+  };
+
+  return { sessionState, sessionInfo };
+}
+
 export async function handleRecordingStopped(payload) {
   console.log(`[automation] Recording stopped (${payload.trigger})`);
 
@@ -79,70 +129,27 @@ export async function handleRecordingStopped(payload) {
     }
   }
 
-  let recordings;
+  let data;
   try {
-    recordings = await recorder.listRecordings();
+    data = await loadLastSession();
   } catch (err) {
     console.error('[automation] Failed to fetch recordings:', err.message);
     await telegram.sendMessage(`⚠️ Recording stopped but couldn't fetch details: ${err.message}`);
     return;
   }
-
-  const allSessions = groupRecordingsIntoSessions(recordings);
-  if (allSessions.length === 0) {
+  if (!data) {
     console.log('[automation] No sessions found');
     return;
   }
 
-  const session = allSessions[allSessions.length - 1];
-
-  const cameraA = session.recordings.filter(r => r.camera === 'camera_a');
-  const cameraB = session.recordings.filter(r => r.camera === 'camera_b');
-
-  const durationA = cameraA.reduce((sum, r) => sum + (r.duration || 0), 0);
-  const durationB = cameraB.reduce((sum, r) => sum + (r.duration || 0), 0);
-  const maxDuration = Math.max(durationA, durationB);
-
-
-  const sizeA = cameraA.reduce((sum, r) => sum + (r.size || 0), 0);
-  const sizeB = cameraB.reduce((sum, r) => sum + (r.size || 0), 0);
-
-  const sessionId = uuidv4();
-  const sessionState = {
-    sessionId,
-    status: 'pending_approval',
-    telegramMessageId: null,
-    processJobId: null,
-    recordings: session.recordings,
-    filenames: session.recordings.map(r => r.filename),
-    importedFiles: { a: [], b: [] },
-    date: formatDate(session.startTime),
-    timeRange: `${formatTime(session.startTime)} – ${formatTime(session.endTime)}`,
-  };
-  sessions.set(sessionId, sessionState);
-
-  const sessionInfo = {
-    sessionId,
-    date: formatDate(session.startTime),
-    timeRange: `${formatTime(session.startTime)} – ${formatTime(session.endTime)}`,
-    cameraA: {
-      segments: cameraA.length,
-      duration: formatDuration(durationA),
-      size: formatSize(sizeA),
-    },
-    cameraB: {
-      segments: cameraB.length,
-      duration: formatDuration(durationB),
-      size: formatSize(sizeB),
-    },
-  };
+  const { sessionState, sessionInfo } = registerSession(data);
 
   try {
     const msg = await telegram.sendSessionPrompt(sessionInfo);
     if (msg) sessionState.telegramMessageId = msg.message_id;
   } catch (err) {
     console.error('[automation] Failed to send Telegram prompt:', err.message);
-    sessions.delete(sessionId);
+    sessions.delete(sessionState.sessionId);
   }
 }
 
@@ -425,58 +432,74 @@ async function handleReprocess() {
     }
   }
 
-  let recordings;
+  let data;
   try {
-    recordings = await recorder.listRecordings();
+    data = await loadLastSession();
   } catch (err) {
     await telegram.sendMessage(`⚠️ Couldn't fetch recordings: ${err.message}`);
     return;
   }
-
-  const allSessions = groupRecordingsIntoSessions(recordings);
-  if (allSessions.length === 0) {
+  if (!data) {
     await telegram.sendMessage('⚠️ No recording sessions found.');
     return;
   }
-
-  const session = allSessions[allSessions.length - 1];
-  const cameraA = session.recordings.filter(r => r.camera === 'camera_a');
-  const cameraB = session.recordings.filter(r => r.camera === 'camera_b');
-
-  if (cameraA.length === 0 || cameraB.length === 0) {
+  if (data.cameraA.length === 0 || data.cameraB.length === 0) {
     await telegram.sendMessage('⚠️ Last session is missing recordings from one camera.');
     return;
   }
 
-  const durationA = cameraA.reduce((sum, r) => sum + (r.duration || 0), 0);
-  const durationB = cameraB.reduce((sum, r) => sum + (r.duration || 0), 0);
-  const sizeA = cameraA.reduce((sum, r) => sum + (r.size || 0), 0);
-  const sizeB = cameraB.reduce((sum, r) => sum + (r.size || 0), 0);
-
-  const sessionId = uuidv4();
-  const sessionState = {
-    sessionId,
-    status: 'pending_approval',
-    telegramMessageId: null,
-    processJobId: null,
-    recordings: session.recordings,
-    filenames: session.recordings.map(r => r.filename),
-    importedFiles: { a: [], b: [] },
-    date: formatDate(session.startTime),
-    timeRange: `${formatTime(session.startTime)} – ${formatTime(session.endTime)}`,
-  };
-  sessions.set(sessionId, sessionState);
+  const { sessionState } = registerSession(data);
 
   const msg = await telegram.sendMessage(
     `🔄 <b>Reprocessing Last Session</b>\n\n` +
     `📅 ${sessionState.date}, ${sessionState.timeRange}\n` +
-    `📹 Camera A: ${cameraA.length} segments, ${formatDuration(durationA)}, ${formatSize(sizeA)}\n` +
-    `📹 Camera B: ${cameraB.length} segments, ${formatDuration(durationB)}, ${formatSize(sizeB)}\n\n` +
+    `📹 Camera A: ${data.cameraA.length} segments, ${formatDuration(data.durationA)}, ${formatSize(data.sizeA)}\n` +
+    `📹 Camera B: ${data.cameraB.length} segments, ${formatDuration(data.durationB)}, ${formatSize(data.sizeB)}\n\n` +
     `⏳ Starting...`
   );
   if (msg) sessionState.telegramMessageId = msg.message_id;
 
-  await handleApproval(sessionId);
+  await handleApproval(sessionState.sessionId);
+}
+
+async function handlePrompt() {
+  if (busy) {
+    await telegram.sendMessage('⚠️ Automation is busy. Try again later.');
+    return;
+  }
+
+  for (const job of jobs.values()) {
+    if (['processing', 'uploading', 'cloud-processing', 'downloading'].includes(job.status)) {
+      await telegram.sendMessage('⚠️ A manual job is running. Try again later.');
+      return;
+    }
+  }
+
+  let data;
+  try {
+    data = await loadLastSession();
+  } catch (err) {
+    await telegram.sendMessage(`⚠️ Couldn't fetch recordings: ${err.message}`);
+    return;
+  }
+  if (!data) {
+    await telegram.sendMessage('⚠️ No recording sessions found.');
+    return;
+  }
+  if (data.cameraA.length === 0 || data.cameraB.length === 0) {
+    await telegram.sendMessage('⚠️ Last session is missing recordings from one camera.');
+    return;
+  }
+
+  const { sessionState, sessionInfo } = registerSession(data);
+
+  try {
+    const msg = await telegram.sendSessionPrompt(sessionInfo);
+    if (msg) sessionState.telegramMessageId = msg.message_id;
+  } catch (err) {
+    sessions.delete(sessionState.sessionId);
+    await telegram.sendMessage(`⚠️ Failed to send prompt: ${err.message}`);
+  }
 }
 
 async function handleCancel() {
@@ -552,6 +575,10 @@ async function handleCleanupAws() {
 export function initCallbackHandler() {
   telegram.onCommand('reprocess', async () => {
     await handleReprocess();
+  });
+
+  telegram.onCommand('prompt', async () => {
+    await handlePrompt();
   });
 
   telegram.onCommand('getlink', async () => {
